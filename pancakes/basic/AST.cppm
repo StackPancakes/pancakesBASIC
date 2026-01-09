@@ -1,0 +1,44 @@
+module;
+#include <string_view>
+#include <string>
+#include <memory>
+#include <vector>
+export module pancakes.basic.AST;
+
+export struct ASTVisitor;
+
+export struct ASTNode
+{
+    virtual ~ASTNode() = default;
+    virtual void accept(ASTVisitor& visitor) = 0;
+};
+
+export struct ProgramNode : ASTNode
+{
+    std::vector<std::unique_ptr<ASTNode>> statements;
+    void accept(ASTVisitor& visitor) override;
+};
+
+export struct PrintNode final : ASTNode
+{
+    std::string text;
+    explicit PrintNode(std::string_view t) : text{ t } {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+export struct ASTVisitor
+{
+    virtual ~ASTVisitor() = default;
+    virtual void visit(PrintNode* node) = 0;
+};
+
+inline void ProgramNode::accept(ASTVisitor& visitor)
+{
+    for (auto const& stmt : statements)
+        stmt->accept(visitor);
+}
+
+inline void PrintNode::accept(ASTVisitor& visitor)
+{
+    visitor.visit(this);
+}
