@@ -185,9 +185,10 @@ int main(int argc, char* argv[])
             compiler.finalizeMain();
 
             std::error_code ec;
-
+            std::string llPath{ "output.ll" };
+            std::string objPathStr{ "output.obj" };
             {
-                llvm::raw_fd_ostream llOut{ "output.ll", ec, llvm::sys::fs::OF_Text };
+                llvm::raw_fd_ostream llOut{ llPath, ec, llvm::sys::fs::OF_Text };
                 if (ec)
                     return 1;
                 compiler.module->print(llOut, nullptr);
@@ -214,10 +215,8 @@ int main(int argc, char* argv[])
 
             compiler.module->setDataLayout(targetMachine->createDataLayout());
 
-            fs::path objPath{ "output.obj" };
-
             {
-                llvm::raw_fd_ostream objOut{ objPath.string(), ec, llvm::sys::fs::OF_None };
+                llvm::raw_fd_ostream objOut{ objPathStr, ec, llvm::sys::fs::OF_None };
                 if (ec)
                     return 1;
 
@@ -231,7 +230,7 @@ int main(int argc, char* argv[])
             auto exePath{ fs::path(file_names[0]) };
             exePath.replace_extension(".exe");
 
-            if (!linkObjectToExe(objPath.wstring(), exePath.wstring()))
+            if (!linkObjectToExe(std::wstring{ objPathStr.begin(), objPathStr.end() }, exePath.wstring()))
                 return 1;
             fs::remove(llPath);
             fs::remove(objPathStr);
