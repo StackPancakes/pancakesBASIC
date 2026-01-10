@@ -36,5 +36,6 @@ export std::unordered_map<std::string_view, TokenType, CaseInsensitiveHash, Case
 {
     { "PRINT", TokenType::PRINT },
         { "?", TokenType::PRINT },
-        { "REM", TokenType::REM }
+        { "REM", TokenType::REM },
+    { "INPUT", TokenType::INPUT }
 };
