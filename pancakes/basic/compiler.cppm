@@ -66,12 +66,19 @@ export struct Compiler final : ASTVisitor
     void visit(PrintNode* node) override
     {
         if (node->isStringLiteral)
+        {
+            auto* strConst{ builder->CreateGlobalStringPtr(node->text) };
             builder->CreateCall(printStringFn, {
-                        { builder->CreateGlobalStringPtr(node->text) },
+                        strConst,
                         llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), static_cast<int>(node->text.size()))
                     });
+        }
         else
-            builder->CreateCall(printFloatFn, { { builder->CreateLoad(llvm::Type::getFloatTy(context), getVariableAlloca(node->text)) } });
+        {
+            auto* alloca{ getVariableAlloca(node->text) };
+            auto* floatVal{ builder->CreateLoad(llvm::Type::getFloatTy(context), alloca) };
+            builder->CreateCall(printFloatFn, { floatVal });
+        }
     }
 
 
