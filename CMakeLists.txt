@@ -70,6 +70,7 @@ target_link_libraries(PancakesBASIC PRIVATE
         dbghelp
         advapi32
         ntdll
+        pancakes_runtime
 )
 
 if(MSVC)
