@@ -31,6 +31,8 @@ constexpr auto BASIC_FILE_EXTENSION_LENGTH{ 4 };
 
 namespace fs = std::filesystem;
 
+extern "C" void pancakes_init();
+
 static std::string make_tokens_filename(const std::string& bas_file)
 {
     if (bas_file.size() >= 4 && bas_file.substr(bas_file.size() - BASIC_FILE_EXTENSION_LENGTH) == ".bas")
@@ -177,6 +179,7 @@ int main(int argc, char* argv[])
 
         if (!to_compile)
         {
+            pancakes_init();
             Interpreter interpreter;
             if (stmt) stmt->accept(interpreter);
         }
