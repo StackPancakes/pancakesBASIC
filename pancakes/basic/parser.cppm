@@ -16,7 +16,7 @@ export struct Parser
 
     explicit Parser(std::vector<Token>& t) : tokens{ t }, pos{ 0 } {}
 
-    Token peek() const { return tokens[pos]; }
+    [[nodiscard]] Token peek() const { return tokens[pos]; }
     Token consume() { return tokens[pos++]; }
 
     std::unique_ptr<ProgramNode> parse()
@@ -28,23 +28,46 @@ export struct Parser
             switch (Token tok{ peek() }; tok.type)
             {
                 case TokenType::PRINT:
+                {
+                    consume();
+
+                    switch (auto [type, name, position]{ consume() }; type)
                     {
-                        consume();
-                        Token t{ consume() };
-                        if (t.type == TokenType::STRING)
-                            program->statements.push_back(std::make_unique<PrintNode>(t.name));
-                        else
+                        case TokenType::STRING:
+                            program->statements.push_back(std::make_unique<PrintNode>(name, true));
+                            break;
+
+                        case TokenType::IDENTIFIER:
+                            program->statements.push_back(std::make_unique<PrintNode>(name, false));
+                            break;
+
+                        default:
                             throw std::runtime_error{
-                                std::format("Expected string after {} at ({}, {})",
-                                        t.name,
-                                        t.position.line,
-                                        t.position.column)
+                                std::format("Expected string or identifier after PRINT at ({}, {})",
+                                            position.line,
+                                            position.column)
                             };
-                        break;
                     }
+                    break;
+                }
+                case TokenType::INPUT:
+                {
+                    consume();
+                    if (auto [type, name, position]{ consume() };
+                        type == TokenType::IDENTIFIER)
+                        program->statements.push_back(std::make_unique<InputNode>(name));
+                    else
+                        throw std::runtime_error{
+                            std::format("Expected identifier after {} at ({}, {})",
+                                    name,
+                                    position.line,
+                                    position.column)
+                            };
+                    break;
+                }
                 default:
                     throw std::runtime_error{
-                        std::format("Unknown statement \"{}\" at ({}, {})",
+                        std::format("Expected identifier after {} at ({}, {})",
                                 tok.name,
                                 tok.position.line,
                                 tok.position.column)
