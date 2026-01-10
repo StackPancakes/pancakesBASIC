@@ -22,7 +22,16 @@ export struct ProgramNode : ASTNode
 export struct PrintNode final : ASTNode
 {
     std::string text;
-    explicit PrintNode(std::string_view t) : text{ t } {}
+    bool isStringLiteral;
+    explicit PrintNode(std::string_view const t, bool const literal = false) :
+        text{ t }, isStringLiteral{ literal } {}
+    void accept(ASTVisitor& visitor) override;
+};
+
+export struct InputNode final : ASTNode
+{
+    std::string variable;
+    explicit InputNode(std::string_view const v) : variable{ v } {}
     void accept(ASTVisitor& visitor) override;
 };
 
@@ -30,6 +39,7 @@ export struct ASTVisitor
 {
     virtual ~ASTVisitor() = default;
     virtual void visit(PrintNode* node) = 0;
+    virtual void visit(InputNode* node) = 0;
 };
 
 inline void ProgramNode::accept(ASTVisitor& visitor)
@@ -39,6 +49,11 @@ inline void ProgramNode::accept(ASTVisitor& visitor)
 }
 
 inline void PrintNode::accept(ASTVisitor& visitor)
+{
+    visitor.visit(this);
+}
+
+inline void InputNode::accept(ASTVisitor& visitor)
 {
     visitor.visit(this);
 }
