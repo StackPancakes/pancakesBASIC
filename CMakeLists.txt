@@ -1,6 +1,18 @@
 cmake_minimum_required(VERSION 3.28)
 project(PancakesBASIC LANGUAGES CXX)
 
+find_library(DIA_LIB NAMES diaguids.lib
+        PATHS
+        "C:/Program Files/Microsoft Visual Studio/18/Insiders/DIA SDK/lib/amd64"
+        "C:/Program Files/Microsoft Visual Studio/18/Insiders/VC/Tools/MSVC/14.50.35717/lib/x64"
+        REQUIRED
+)
+add_library(diaguids_fix UNKNOWN IMPORTED)
+
+set_target_properties(diaguids_fix PROPERTIES
+        IMPORTED_LOCATION "${DIA_LIB}"
+)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
