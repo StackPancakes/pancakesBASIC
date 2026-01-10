@@ -6,6 +6,7 @@
 #include <llvm/MC/TargetRegistry.h>
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
+#include <llvm/IR/Verifier.h>
 #include <system_error>
 #include <memory>
 #include <string>
@@ -17,6 +18,7 @@
 #include <iostream>
 #include <optional>
 #include <windows.h>
+#include "config.h"
 
 import pancakes.basic.compiler;
 import pancakes.basic.lexer;
@@ -36,14 +38,15 @@ static std::string make_tokens_filename(const std::string& bas_file)
     return bas_file + ".tokens.txt";
 }
 
-static bool linkObjectToExe(std::wstring const& objFile, std::wstring const& exeFile) {
+static bool linkObjectToExe(std::wstring const& objFile, std::wstring const& exeFile)
+{
     std::wstring commandLine
     {
-        L"cl.exe /nologo " + objFile + 
-            L" /Fe:" + exeFile + 
-            L" /link /SUBSYSTEM:CONSOLE /DEFAULTLIB:libcmt " + 
-            L"ws2_32.lib user32.lib kernel32.lib" 
+        L"link.exe /nologo \"" + objFile + L"\" \"" +
+        PANCAKES_RUNTIME_LIB_DIR + L"/pancakes_runtime.lib\" /OUT:\"" +
+        exeFile + L"\" /SUBSYSTEM:CONSOLE /NODEFAULTLIB /ENTRY:pancakesSTART kernel32.lib"
     };
+
     STARTUPINFOW si{};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi{};
@@ -87,7 +90,7 @@ int main(int argc, char* argv[])
     bool to_dump_tokens{ false };
     bool to_compile{ false };
 
-    std::span<char*> args(argv + 1, argc - 1);
+    std::span args(argv + 1, argc - 1);
 
     if (args.empty())
     {
@@ -180,9 +183,14 @@ int main(int argc, char* argv[])
         else
         {
             Compiler compiler;
-            compiler.ensureMain();
             if (stmt) stmt->accept(compiler);
-            compiler.finalizeMain();
+            compiler.finalizeModule();
+
+            if (llvm::verifyModule(*compiler.module, &llvm::errs()))
+            {
+                llvm::errs() << "LLVM verification failed\n";
+                return 1;
+            }
 
             std::error_code ec;
             std::string llPath{ "output.ll" };
@@ -190,7 +198,10 @@ int main(int argc, char* argv[])
             {
                 llvm::raw_fd_ostream llOut{ llPath, ec, llvm::sys::fs::OF_Text };
                 if (ec)
+                {
+                    llvm::errs() << "Failed to open output.ll: " << ec.message() << "\n";
                     return 1;
+                }
                 compiler.module->print(llOut, nullptr);
             }
 
