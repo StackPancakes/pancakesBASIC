@@ -25,6 +25,7 @@ export struct Compiler final : ASTVisitor
     llvm::GlobalVariable* hConsoleGV{};
     llvm::Function* initConsoleFn{};
     llvm::Function* mainFn{};
+    llvm::AllocaInst* writtenAlloca{};
 
     Compiler()
         : module{ std::make_unique<llvm::Module>("pancakes", context) }
@@ -56,6 +57,10 @@ export struct Compiler final : ASTVisitor
                     )
                 );
 
+        llvm::cast<llvm::Function>(getStdHandleFn.getCallee())->addFnAttr(llvm::Attribute::NoUnwind);
+        llvm::cast<llvm::Function>(writeConsoleFn.getCallee())->addFnAttr(llvm::Attribute::NoUnwind);
+
+
         hConsoleGV = new llvm::GlobalVariable(
                 *module,
                 voidPtrTy,
@@ -66,25 +71,28 @@ export struct Compiler final : ASTVisitor
                 );
 
         auto* initTy{ llvm::FunctionType::get(voidTy, false) };
+
         initConsoleFn = llvm::Function::Create(
                 initTy,
-                llvm::Function::InternalLinkage,
+                llvm::GlobalValue::InternalLinkage,
                 "pancakes_init_console",
                 module.get()
                 );
 
-        auto* entry{ llvm::BasicBlock::Create(context, "entry", initConsoleFn) };
-        builder->SetInsertPoint(entry);
+        initConsoleFn->addFnAttr(llvm::Attribute::AlwaysInline);
 
-        auto* stdoutConst{
-            llvm::ConstantInt::get(i32Ty, static_cast<int32_t>(STD_OUTPUT_HANDLE))
-        };
+        {
+            auto* entry{ llvm::BasicBlock::Create(context, "entry", initConsoleFn) };
+            llvm::IRBuilder<> tmpBuilder{ entry };
 
-        auto* handle{ builder->CreateCall(getStdHandleFn, { stdoutConst }) };
-        builder->CreateStore(handle, hConsoleGV);
-        builder->CreateRetVoid();
+            auto* stdoutConst{
+                llvm::ConstantInt::get(i32Ty, static_cast<int32_t>(STD_OUTPUT_HANDLE))
+            };
 
-        builder->ClearInsertionPoint();
+            auto* handle{ tmpBuilder.CreateCall(getStdHandleFn, { stdoutConst }) };
+            tmpBuilder.CreateStore(handle, hConsoleGV);
+            tmpBuilder.CreateRetVoid();
+        }
     }
 
     void ensureMain()
@@ -96,7 +104,7 @@ export struct Compiler final : ASTVisitor
         auto* i8PtrTy{ llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(context)) };
         auto* i8PtrPtrTy{ llvm::PointerType::getUnqual(i8PtrTy) };
 
-        std::vector<llvm::Type*> mainArgTypes{ { i32Ty, i8PtrPtrTy } };
+        std::vector<llvm::Type*> mainArgTypes{ i32Ty, i8PtrPtrTy };
 
         auto* mainTy{ llvm::FunctionType::get(i32Ty, mainArgTypes, false) };
 
@@ -109,6 +117,8 @@ export struct Compiler final : ASTVisitor
 
         auto* entry{ llvm::BasicBlock::Create(context, "entry", mainFn) };
         builder->SetInsertPoint(entry);
+
+        writtenAlloca = builder->CreateAlloca(i32Ty, nullptr, "written");
         builder->CreateCall(initConsoleFn);
     }
 
@@ -134,7 +144,6 @@ export struct Compiler final : ASTVisitor
         std::string text{ node->text + '\n' };
         auto* str{ builder->CreateGlobalString(text) };
 
-        auto* written{ builder->CreateAlloca(i32Ty) };
         auto* handle{ builder->CreateLoad(voidPtrTy, hConsoleGV) };
 
         auto* len{
@@ -147,7 +156,7 @@ export struct Compiler final : ASTVisitor
                 handle,
                 str,
                 len,
-                written,
+                writtenAlloca,
                 llvm::ConstantPointerNull::get(voidPtrTy)
                 }
                 );
