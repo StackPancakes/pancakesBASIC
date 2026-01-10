@@ -1,3 +1,4 @@
+// ReSharper disable CppUnusedIncludeDirective
 module;
 #include <string>
 #include <string_view>
@@ -134,12 +135,12 @@ export class Lexer
     public:
     friend std::ostream& operator<<(std::ostream& out, Lexer lexer)
     {
-        for (auto const& tokens : lexer.tokenize())
+        for (auto const&[type, name, position] : lexer.tokenize())
         {
-            if (tokens.type == TokenType::END_OF_FILE)
+            if (type == TokenType::END_OF_FILE)
                 break;
-            out << std::format("Token type: [{}], Positions: {{{}, {}}}, Value: {}\n", TokenTypeName(tokens.type),
-                    tokens.position.line, tokens.position.column, tokens.name);
+            out << std::format("Token type: [{}], Positions: {{{}, {}}}, Value: {}\n", TokenTypeName(type),
+                    position.line, position.column, name);
         }
         return out;
     }
