@@ -1,0 +1,78 @@
+<program>       ::= <statement_list>
+
+<statement_list>::= <statement> { ":" <statement> }
+
+<statement>     ::= <print_stmt>
+                  | <input_stmt>
+                  | <assignment_stmt>
+                  | <if_stmt>
+                  | <for_stmt>
+                  | <while_stmt>
+                  | <do_loop_stmt>
+                  | <gosub_stmt>
+                  | <return_stmt>
+                  | <sub_stmt>
+                  | <function_stmt>
+                  | <goto_stmt>
+                  | <end_stmt>
+
+<print_stmt>    ::= "PRINT" <expression_list> [ <print_sep_list> ]
+                  | "?" <expression_list> [ <print_sep_list> ]
+<print_sep_list> ::= { (";"|",") <expression_list> }
+
+<input_stmt>    ::= "INPUT" [ <string_literal> <sep> ] <id_list>
+<sep>           ::= ";" | ","
+<id_list>       ::= <identifier> { "," <identifier> }
+
+<assignment_stmt>::= "LET" <identifier> "=" <expression>
+                  | <identifier> "=" <expression>
+
+<if_stmt>       ::= "IF" <expression> "THEN" <statement_list> ["ELSE" <statement_list>] "END IF"
+                  | "IF" <expression> "THEN" <statement> ["ELSE" <statement>]   ; one-line
+
+<for_stmt>      ::= "FOR" <identifier> "=" <expression> "TO" <expression> [ "STEP" <expression> ] <statement_list> "NEXT" <identifier>
+                  | "FOR" <identifier> "=" <expression> "TO" <expression> [ "STEP" <expression> ] <statement> ; one-line
+
+<while_stmt>    ::= "WHILE" <expression> <statement_list> "WEND"
+                  | "WHILE" <expression> <statement> ; one-line
+
+<do_loop_stmt>  ::= "DO" <statement_list> "LOOP" [ "WHILE" <expression> | "UNTIL" <expression> ]
+                  | "DO" <statement> "LOOP" [ "WHILE" <expression> | "UNTIL" <expression> ] ; one-line
+
+<gosub_stmt>    ::= "GOSUB" <identifier_or_line>
+
+<return_stmt>   ::= "RETURN"
+
+<sub_stmt>      ::= "SUB" <identifier> [ "(" <parameter_list> ")" ] <statement_list> "END SUB"
+
+<function_stmt> ::= "FUNCTION" <identifier> "(" <parameter_list> ")" "AS" <type> <statement_list> "END FUNCTION"
+
+<goto_stmt>     ::= "GOTO" <identifier_or_line>
+
+<end_stmt>      ::= "END"
+
+<expression_list>::= <expression> { "," <expression> }
+
+<expression>    ::= [ "+" | "-" ] <term> { ("+"|"-") <term> }
+
+<term>          ::= <factor> { ("*"|"/"|"\"|"^") <factor> }
+
+<factor>        ::= <number>
+                  | <string_literal>
+                  | <identifier>
+                  | "(" <expression> ")"
+                  | <function_call>
+
+<function_call> ::= <identifier> "(" [ <expression_list> ] ")"
+
+<parameter_list>::= <identifier> { "," <identifier> }
+
+<identifier_or_line> ::= <identifier> | <number>
+
+<identifier>    ::= letter { letter | digit | "_" }
+
+<number>        ::= [ "+" | "-" ] digit { digit } [ "." digit { digit } ]
+
+<string_literal>::= '"' { any_character_except_quote } '"'
+
+<type>          ::= "INTEGER" | "LONG" | "SINGLE" | "DOUBLE" | "STRING"
