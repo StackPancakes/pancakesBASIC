@@ -31,9 +31,11 @@ export constexpr std::string_view TokenTypeName(TokenType const t)
 {
     switch (t)
     {
+        case TokenType::IDENTIFIER: return "IDENTIFIER";
         case TokenType::PRINT: return "PRINT";
         case TokenType::STRING: return "STRING";
         case TokenType::END_OF_FILE: return "EOF";
+        case TokenType::INPUT: return "INPUT";
         default: return "UNKNOWN";
     }
 }
