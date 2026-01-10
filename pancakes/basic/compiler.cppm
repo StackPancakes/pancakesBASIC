@@ -66,19 +66,12 @@ export struct Compiler final : ASTVisitor
     void visit(PrintNode* node) override
     {
         if (node->isStringLiteral)
-        {
-            auto* strConst{ builder->CreateGlobalStringPtr(node->text) };
             builder->CreateCall(printStringFn, {
-                        strConst,
+                        { builder->CreateGlobalStringPtr(node->text) },
                         llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), static_cast<int>(node->text.size()))
                     });
-        }
         else
-        {
-            auto* alloca{ getVariableAlloca(node->text) };
-            auto* floatVal{ builder->CreateLoad(llvm::Type::getFloatTy(context), alloca) };
-            builder->CreateCall(printFloatFn, { floatVal });
-        }
+            builder->CreateCall(printFloatFn, { { builder->CreateLoad(llvm::Type::getFloatTy(context), getVariableAlloca(node->text)) } });
     }
 
 
@@ -97,7 +90,7 @@ export struct Compiler final : ASTVisitor
 private:
     llvm::AllocaInst* getVariableAlloca(const std::string& name)
     {
-        if (auto it{ variables.find(name) }; it != variables.end())
+        if (auto const it{ variables.find(name) }; it != variables.end())
             return it->second;
 
         auto* alloca{ builder->CreateAlloca(llvm::Type::getFloatTy(context), nullptr, name) };
@@ -112,18 +105,18 @@ private:
         auto* i32Ty{ llvm::Type::getInt32Ty(context) };
         auto* i8PtrTy{ llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(context)) };
 
-        auto setCommonAttrs = [](llvm::FunctionCallee fn)
+        auto setCommonAttrs{ [](llvm::FunctionCallee fn)
         {
             if (auto* func{ llvm::dyn_cast<llvm::Function>(fn.getCallee()) })
                 func->addFnAttr(llvm::Attribute::NoUnwind);
-        };
+        } };
 
         initFn = module->getOrInsertFunction("pancakes_init", llvm::FunctionType::get(voidTy, false));
         setCommonAttrs(initFn);
 
         parseFloatFn = module->getOrInsertFunction("pancakes_parse_float", llvm::FunctionType::get(floatTy, { i8PtrTy, i32Ty }, false));
         setCommonAttrs(parseFloatFn);
-        if (auto* f = llvm::dyn_cast<llvm::Function>(parseFloatFn.getCallee()))
+        if (auto* f{ llvm::dyn_cast<llvm::Function>(parseFloatFn.getCallee()) })
         {
             f->addParamAttr(0, llvm::Attribute::ReadOnly);
             f->addParamAttr(0, llvm::Attribute::NoCapture);
@@ -134,7 +127,7 @@ private:
 
         printStringFn = module->getOrInsertFunction("pancakes_print_string", llvm::FunctionType::get(voidTy, { i8PtrTy, i32Ty }, false));
         setCommonAttrs(printStringFn);
-        if (auto* f = llvm::dyn_cast<llvm::Function>(printStringFn.getCallee()))
+        if (auto* f{ llvm::dyn_cast<llvm::Function>(printStringFn.getCallee()) })
         {
             f->addParamAttr(0, llvm::Attribute::ReadOnly);
             f->addParamAttr(0, llvm::Attribute::NoCapture);
@@ -142,7 +135,7 @@ private:
 
         inputFn = module->getOrInsertFunction("pancakes_input", llvm::FunctionType::get(i32Ty, { i8PtrTy, i32Ty }, false));
         setCommonAttrs(inputFn);
-        if (auto* f = llvm::dyn_cast<llvm::Function>(inputFn.getCallee()))
+        if (auto* f{ llvm::dyn_cast<llvm::Function>(inputFn.getCallee()) })
             f->addParamAttr(0, llvm::Attribute::NoCapture);
     }
 };
