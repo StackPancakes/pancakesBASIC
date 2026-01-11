@@ -1,4 +1,3 @@
-// ReSharper disable CppUnusedIncludeDirective
 module;
 #include <string>
 #include <string_view>
@@ -6,22 +5,21 @@ module;
 #include <cctype>
 #include <stdexcept>
 #include <format>
+// ReSharper disable once CppUnusedIncludeDirective
 #include <iostream>
 export module pancakes.basic.lexer;
 
 import pancakes.basic.token;
 import pancakes.basic.tokentype;
 import pancakes.basic.keywords;
+import pancakes.basic.symbols;
+
 
 export class Lexer
 {
-    std::string input;
-    std::size_t position{};
-    std::size_t line{ 1 };
-    std::size_t column{ 1 };
+public:
+    explicit Lexer(std::string_view const source) : input{ source } {}
 
-    public:
-    explicit Lexer(std::string_view source) : input{ source } {}
     std::vector<Token> tokenize()
     {
         std::vector<Token> tokens;
@@ -35,7 +33,23 @@ export class Lexer
         return tokens;
     }
 
-    private:
+    friend std::ostream& operator<<(std::ostream& out, Lexer lexer)
+    {
+        for (auto const& [type, name, pos] : lexer.tokenize())
+        {
+            if (type == TokenType::END_OF_FILE)
+                break;
+            out << std::format("Token type: [{}], Positions: {{{}, {}}}, Value: {}\n",
+                TokenTypeName(type), pos.line, pos.column, name);
+        }
+        return out;
+    }
+
+private:
+    std::string input;
+    std::size_t position{};
+    std::size_t line{ 1 };
+    std::size_t column{ 1 };
 
     [[nodiscard]] bool eof() const
     {
@@ -49,20 +63,27 @@ export class Lexer
 
     char advance()
     {
-        char const c{ peek() };
+        char c{ peek() };
         ++position;
-        if (c == '\n') { ++line; column = 1; }
-        else ++column;
+        if (c == '\n')
+        {
+            ++line;
+            column = 1;
+        }
+        else
+            ++column;
         return c;
     }
 
-    void skip()
+    void skipWhitespace()
     {
         while (!eof())
         {
-            if (char const c{ peek() }; std::isspace(static_cast<unsigned char>(c)) || static_cast<unsigned char>(c) == 0xA0)
+            char const c{ peek() };
+            if (c == ' ' || c == '\t' || static_cast<unsigned char>(c) == 0xA0)
                 advance();
-            else break;
+            else
+                break;
         }
     }
 
@@ -70,7 +91,7 @@ export class Lexer
     {
         while (true)
         {
-            skip();
+            skipWhitespace();
 
             std::size_t const ln{ line }, col{ column };
 
@@ -79,69 +100,83 @@ export class Lexer
 
             char const c{ advance() };
 
-            if (std::isalpha(static_cast<unsigned char>(c)))
+            if (c == '\n')
+                return { TokenType::END_OF_LINE, "\n", { ln, col } };
+
+            if (c == '\r')
             {
-                std::size_t start{ position - 1 };
-                while (!eof() && (std::isalnum(static_cast<unsigned char>(peek())) || peek() == '_'))
+                if (!eof() && peek() == '\n')
                     advance();
-
-                std::string_view token{ input.data() + start, position - start };
-
-                auto it{ keywords.find(token) };
-
-                if (it != keywords.end() && it->second == TokenType::REM)
-                {
-                    while (!eof() && peek() != '\n')
-                        advance();
-                    if (!eof() && peek() == '\n')
-                        advance();
-                    continue;
-                }
-
-                return { it != keywords.end() ? it->second : TokenType::IDENTIFIER, token, { ln, col } };
+                return { TokenType::END_OF_LINE, "\r\n", { ln, col } };
             }
+
+            if (std::isalpha(static_cast<unsigned char>(c)))
+                return readIdentifierOrKeyword(ln, col);
 
             if (std::isdigit(static_cast<unsigned char>(c)))
-            {
-                std::size_t start{ position - 1 };
-                while (!eof() && (std::isdigit(static_cast<unsigned char>(peek())) || peek() == '.'))
-                    advance();
-
-                return { TokenType::NUMBER, { input.data() + start, position - start }, { ln, col } };
-            }
-
+                return readNumber(ln, col);
 
             if (c == '"')
-            {
-                std::size_t start{ position };
-                while (!eof() && peek() != '"')
-                    advance();
-                if (eof())
-                    throw std::runtime_error{ "Unterminated string" };
+                return readString(ln, col);
 
-                advance();
-                return { TokenType::STRING, { input.data() + start, position - start - 1 }, { ln, col } };
-            }
-
-            std::string_view single{ input.data() + position - 1, 1 };
-            auto sit{ keywords.find(single) };
-            if (sit != keywords.end())
-                return { sit->second, single, { ln, col } };
-
-            return { TokenType::UNKNOWN, { input.data() + position - 1, 1 }, { ln, col } };
+            return readSingleOrUnknown(c, ln, col);
         }
     }
 
-    public:
-    friend std::ostream& operator<<(std::ostream& out, Lexer lexer)
+    Token readIdentifierOrKeyword(size_t const ln, size_t const col)
     {
-        for (auto const&[type, name, position] : lexer.tokenize())
+        std::size_t const start{ position - 1 };
+        while (!eof())
         {
-            if (type == TokenType::END_OF_FILE)
+            if (char const c{ peek() }; std::isalnum(static_cast<unsigned char>(c)) || c == '_')
+                advance();
+            else
                 break;
-            out << std::format("Token type: [{}], Positions: {{{}, {}}}, Value: {}\n", TokenTypeName(type),
-                    position.line, position.column, name);
         }
-        return out;
+
+        std::string_view const token{ input.data() + start, position - start };
+        auto const it{ keywords.find(token) };
+
+        // Handle REM comment
+        if (it != keywords.end() && it->second == TokenType::REM)
+        {
+            while (!eof() && peek() != '\n') advance();
+            if (!eof() && peek() == '\n') advance();
+            return next(); // skip comment, read next token
+        }
+
+        return { it != keywords.end() ? it->second : TokenType::IDENTIFIER, token, { ln, col } };
+    }
+
+    Token readNumber(size_t const ln, size_t const col)
+    {
+        std::size_t const start{ position - 1 };
+        while (!eof())
+        {
+            if (char const c{ peek() }; std::isdigit(static_cast<unsigned char>(c)) || c == '.')
+                advance();
+            else
+                break;
+        }
+
+        return { TokenType::NUMBER, { input.data() + start, position - start }, { ln, col } };
+    }
+
+    Token readString(std::size_t const ln, std::size_t const col)
+    {
+        std::size_t const start{ position };
+        while (!eof() && peek() != '"') advance();
+        if (eof())
+            throw std::runtime_error{ "Unterminated string" };
+        advance(); // consume closing quote
+        return { TokenType::STRING, { input.data() + start, position - start - 1 }, { ln, col } };
+    }
+
+    [[nodiscard]] Token readSingleOrUnknown(char const c, std::size_t const ln, std::size_t const col) const
+    {
+        if (auto const it{ symbols.find(c) }; it != symbols.end())
+            return { it->second, std::string_view{ &input[position - 1], 1 }, { ln, col } };
+
+        return { TokenType::UNKNOWN, std::string_view{ &input[position - 1], 1 }, { ln, col } };
     }
 };
