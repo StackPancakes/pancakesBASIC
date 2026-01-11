@@ -30,7 +30,9 @@ add_executable(PancakesBASIC main.cpp
 target_sources(PancakesBASIC
         PRIVATE
         FILE_SET CXX_MODULES FILES
+        pancakes/basic/settings/settings.cppm
         pancakes/basic/tokentype.cppm
+        pancakes/basic/symbols.cppm
         pancakes/basic/keywords.cppm
         pancakes/basic/token.cppm
         pancakes/basic/lexer.cppm
