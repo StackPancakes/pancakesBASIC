@@ -9,6 +9,7 @@ module;
 #include <unordered_map>
 #include <string>
 #include <ranges>
+
 export module pancakes.basic.compiler;
 
 import pancakes.basic.AST;
@@ -32,12 +33,45 @@ export struct Compiler final : ASTVisitor
         module = std::make_unique<llvm::Module>("pancakes", context);
         builder = std::make_unique<llvm::IRBuilder<>>(context);
 
+        initializeTarget();
+        setupExternalFunctions();
+        createEntryPoint();
+    }
+
+    void finalizeModule()
+    {
+        createExitCall();
+        builder->CreateRetVoid();
+    }
+
+    void visit(PrintNode* node) override
+    {
+        for (auto const& item : node->items)
+            emitPrintItem(item);
+
+        appendNewlineIfNeeded(node);
+    }
+
+    void visit(InputNode* node) override
+    {
+        constexpr int bufferSize{ 256 };
+        auto* buffer{ allocateInputBuffer(bufferSize) };
+        auto* bufferSizeConst{ llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), bufferSize) };
+        auto* charsRead{ builder->CreateCall(inputFn, { buffer, bufferSizeConst }) };
+        auto* value{ builder->CreateCall(parseFloatFn, { buffer, charsRead }) };
+        builder->CreateStore(value, getOrCreateVariable(node->variable));
+    }
+
+private:
+    static void initializeTarget()
+    {
         llvm::InitializeNativeTarget();
         llvm::InitializeNativeTargetAsmPrinter();
         llvm::InitializeNativeTargetAsmParser();
+    }
 
-        setupExternalFunctions();
-
+    void createEntryPoint()
+    {
         auto* voidTy{ llvm::Type::getVoidTy(context) };
         auto* startFn{ llvm::Function::Create(
             llvm::FunctionType::get(voidTy, false),
@@ -48,61 +82,90 @@ export struct Compiler final : ASTVisitor
 
         auto* entry{ llvm::BasicBlock::Create(context, "entry", startFn) };
         builder->SetInsertPoint(entry);
-
-        // Call pancakes_init at the very start
         builder->CreateCall(initFn);
     }
 
-    void finalizeModule()
+    void createExitCall()
     {
         auto* voidTy{ llvm::Type::getVoidTy(context) };
         auto* i32Ty{ llvm::Type::getInt32Ty(context) };
         auto* exitProcTy{ llvm::FunctionType::get(voidTy, { i32Ty }, false) };
-        llvm::FunctionCallee const exitProcFn{ module->getOrInsertFunction("ExitProcess", exitProcTy) };
-        builder->CreateCall(exitProcFn, { llvm::ConstantInt::get(i32Ty, 0) });
-        builder->CreateRetVoid();
+        llvm::FunctionCallee const exitFn{ module->getOrInsertFunction("ExitProcess", exitProcTy) };
+        auto* zero{ llvm::ConstantInt::get(i32Ty, 0) };
+        builder->CreateCall(exitFn, { zero });
     }
 
-    void visit(PrintNode* node) override
+    void emitPrintItem(const PrintItem& item)
     {
-        if (node->isStringLiteral)
+        switch (item.kind)
         {
-            auto* strConst{ builder->CreateGlobalStringPtr(node->text) };
-            builder->CreateCall(printStringFn, {
-                        strConst,
-                        llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), static_cast<int>(node->text.size()))
-                    });
+            case PrintItem::Kind::Expression:
+                emitExpression(item);
+                break;
+            case PrintItem::Kind::Tab:
+                emitString("    ");
+                break;
+            case PrintItem::Kind::Spc:
+                emitString(" ");
+                break;
+            case PrintItem::Kind::Sep:
+                emitSeparator(item.text);
+                break;
+        }
+    }
+
+    void emitExpression(const PrintItem& item)
+    {
+        if (item.isStringLiteral)
+        {
+            emitString(item.text);
         }
         else
         {
-            auto* alloca{ getVariableAlloca(node->text) };
-            auto* floatVal{ builder->CreateLoad(llvm::Type::getFloatTy(context), alloca) };
-            builder->CreateCall(printFloatFn, { floatVal });
+            auto* value{ builder->CreateLoad(llvm::Type::getFloatTy(context), getOrCreateVariable(item.text)) };
+            builder->CreateCall(printFloatFn, { value });
         }
     }
 
-
-    void visit(InputNode* node) override
+    void emitSeparator(const std::string& sep)
     {
-        auto* i32Ty{ llvm::Type::getInt32Ty(context) };
-        auto* i8Ty{ llvm::Type::getInt8Ty(context) };
-        auto* buffer{ builder->CreateAlloca(llvm::ArrayType::get(i8Ty, 256), nullptr, "inputBuffer") };
-
-        auto* charsRead{ builder->CreateCall(inputFn, { buffer, llvm::ConstantInt::get(i32Ty, 256) }) };
-        auto* varAlloca{ getVariableAlloca(node->variable) };
-        auto* value{ builder->CreateCall(parseFloatFn, { buffer, charsRead }) };
-        builder->CreateStore(value, varAlloca);
+        if (sep == ",") emitString("    ");
+        else if (sep == "'") emitString("\r\n");
     }
 
-private:
-    llvm::AllocaInst* getVariableAlloca(const std::string& name)
+    void appendNewlineIfNeeded(PrintNode const* node)
     {
-        if (auto const it{ variables.find(name) }; it != variables.end())
+        if (node->items.empty()) return;
+        if (node->items.back().kind != PrintItem::Kind::Sep)
+            emitString("\r\n");
+    }
+
+    llvm::AllocaInst* getOrCreateVariable(const std::string& name)
+    {
+        if (auto it{ variables.find(name) }; it != variables.end())
             return it->second;
 
         auto* alloca{ builder->CreateAlloca(llvm::Type::getFloatTy(context), nullptr, name) };
         variables[name] = alloca;
         return alloca;
+    }
+
+    // ReSharper disable once CppDFAConstantParameter
+    llvm::Value* allocateInputBuffer(int const size)
+    {
+        auto* i8Ty{ llvm::Type::getInt8Ty(context) };
+        auto* arrayTy{ llvm::ArrayType::get(i8Ty, size) };
+        auto* buffer{ builder->CreateAlloca(arrayTy, nullptr, "inputBuffer") };
+        auto* zero{ llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0) };
+        return builder->CreateInBoundsGEP(arrayTy, buffer, { zero, zero }, "bufptr");
+    }
+
+    void emitString(const std::string& str)
+    {
+        auto* i32Ty{ llvm::Type::getInt32Ty(context) };
+        auto* strPtr{ builder->CreateGlobalStringPtr(str) };
+        auto* length{ llvm::ConstantInt::get(i32Ty, static_cast<int>(str.size())) };
+        builder->CreateCall(printStringFn, { strPtr, length });
     }
 
     void setupExternalFunctions()
@@ -112,37 +175,22 @@ private:
         auto* i32Ty{ llvm::Type::getInt32Ty(context) };
         auto* i8PtrTy{ llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(context)) };
 
-        auto setCommonAttrs{ [](llvm::FunctionCallee fn)
+        auto addNoUnwind{ [](llvm::FunctionCallee fn)
         {
             if (auto* func{ llvm::dyn_cast<llvm::Function>(fn.getCallee()) })
                 func->addFnAttr(llvm::Attribute::NoUnwind);
         } };
 
         initFn = module->getOrInsertFunction("pancakes_init", llvm::FunctionType::get(voidTy, false));
-        setCommonAttrs(initFn);
-
         parseFloatFn = module->getOrInsertFunction("pancakes_parse_float", llvm::FunctionType::get(floatTy, { i8PtrTy, i32Ty }, false));
-        setCommonAttrs(parseFloatFn);
-        if (auto* f{ llvm::dyn_cast<llvm::Function>(parseFloatFn.getCallee()) })
-        {
-            f->addParamAttr(0, llvm::Attribute::ReadOnly);
-            f->addParamAttr(0, llvm::Attribute::NoCapture);
-        }
-
         printFloatFn = module->getOrInsertFunction("pancakes_print_float", llvm::FunctionType::get(voidTy, { floatTy }, false));
-        setCommonAttrs(printFloatFn);
-
         printStringFn = module->getOrInsertFunction("pancakes_print_string", llvm::FunctionType::get(voidTy, { i8PtrTy, i32Ty }, false));
-        setCommonAttrs(printStringFn);
-        if (auto* f{ llvm::dyn_cast<llvm::Function>(printStringFn.getCallee()) })
-        {
-            f->addParamAttr(0, llvm::Attribute::ReadOnly);
-            f->addParamAttr(0, llvm::Attribute::NoCapture);
-        }
-
         inputFn = module->getOrInsertFunction("pancakes_input", llvm::FunctionType::get(i32Ty, { i8PtrTy, i32Ty }, false));
-        setCommonAttrs(inputFn);
-        if (auto* f{ llvm::dyn_cast<llvm::Function>(inputFn.getCallee()) })
-            f->addParamAttr(0, llvm::Attribute::NoCapture);
+
+        addNoUnwind(initFn);
+        addNoUnwind(parseFloatFn);
+        addNoUnwind(printFloatFn);
+        addNoUnwind(printStringFn);
+        addNoUnwind(inputFn);
     }
 };
