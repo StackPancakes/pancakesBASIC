@@ -81,4 +81,8 @@
 
 <string_literal>    ::= '"' { any_character_except_quote } '"'
 
+<letter>            ::= "A"-"Z" | "a"-"z"
+
+<digit>              ::= "0"-"9"
+
 <type>              ::= "INTEGER" | "LONG" | "SINGLE" | "DOUBLE" | "STRING"
