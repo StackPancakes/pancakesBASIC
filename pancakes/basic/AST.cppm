@@ -3,6 +3,7 @@ module;
 #include <string>
 #include <memory>
 #include <vector>
+#include <optional>
 export module pancakes.basic.AST;
 
 export struct ASTVisitor;
@@ -19,12 +20,25 @@ export struct ProgramNode : ASTNode
     void accept(ASTVisitor& visitor) override;
 };
 
+export struct PrintItem
+{
+    enum class Kind
+    {
+        Expression,
+        Tab,
+        Spc,
+        Sep
+    };
+
+    Kind kind{};
+    std::string text{};
+    std::optional<std::string> second{};
+    bool isStringLiteral{};
+};
+
 export struct PrintNode final : ASTNode
 {
-    std::string text;
-    bool isStringLiteral;
-    explicit PrintNode(std::string_view const t, bool const literal = false) :
-        text{ t }, isStringLiteral{ literal } {}
+    std::vector<PrintItem> items;
     void accept(ASTVisitor& visitor) override;
 };
 
