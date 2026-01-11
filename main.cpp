@@ -24,6 +24,7 @@ import pancakes.basic.compiler;
 import pancakes.basic.lexer;
 import pancakes.basic.parser;
 import pancakes.basic.interpreter;
+import pancakes.basic.token;
 
 constexpr auto DUMP_TOKENS{ "--DUMP-TOKENS" };
 constexpr auto COMPILE{ "--COMPILE" };
@@ -33,16 +34,17 @@ namespace fs = std::filesystem;
 
 extern "C" void pancakes_init();
 
-static std::string make_tokens_filename(const std::string& bas_file)
+static std::string makeTokensFilename(std::string const& basFile)
 {
-    if (bas_file.size() >= 4 && bas_file.substr(bas_file.size() - BASIC_FILE_EXTENSION_LENGTH) == ".bas")
-        return bas_file.substr(0, bas_file.size() - BASIC_FILE_EXTENSION_LENGTH) + "tokens.txt";
-    return bas_file + ".tokens.txt";
+    if (basFile.size() >= BASIC_FILE_EXTENSION_LENGTH &&
+        basFile.substr(basFile.size() - BASIC_FILE_EXTENSION_LENGTH) == ".bas")
+        return basFile.substr(0, basFile.size() - BASIC_FILE_EXTENSION_LENGTH) + "tokens.txt";
+    return basFile + ".tokens.txt";
 }
 
 static bool linkObjectToExe(std::wstring const& objFile, std::wstring const& exeFile)
 {
-    std::wstring commandLine
+    std::wstring const commandLine
     {
         L"link.exe /nologo \"" + objFile + L"\" \"" +
         PANCAKES_RUNTIME_LIB_DIR + L"/pancakes_runtime.lib\" /OUT:\"" +
@@ -55,18 +57,8 @@ static bool linkObjectToExe(std::wstring const& objFile, std::wstring const& exe
 
     BOOL const success
     {
-        CreateProcessW(
-                nullptr,
-                commandLine.data(),
-                nullptr,
-                nullptr,
-                FALSE,
-                0,
-                nullptr,
-                nullptr,
-                &si,
-                &pi
-                )
+        CreateProcessW(nullptr, const_cast<wchar_t*>(commandLine.data()),
+                       nullptr, nullptr, FALSE, 0, nullptr, nullptr, &si, &pi)
     };
 
     if (!success)
@@ -74,7 +66,6 @@ static bool linkObjectToExe(std::wstring const& objFile, std::wstring const& exe
         std::cerr << "Failed to start linker process. Error: " << GetLastError() << "\n";
         return false;
     }
-
 
     WaitForSingleObject(pi.hProcess, INFINITE);
 
@@ -87,174 +78,177 @@ static bool linkObjectToExe(std::wstring const& objFile, std::wstring const& exe
     return exitCode == 0;
 }
 
-int main(int argc, char* argv[])
+static std::string readFile(fs::path const& path)
 {
-    bool to_dump_tokens{ false };
-    bool to_compile{ false };
+    std::ifstream const reader{ path };
+    if (!reader)
+        throw std::runtime_error{ "Failed to open " + path.string() };
 
-    std::span args(argv + 1, argc - 1);
+    std::ostringstream ss;
+    ss << reader.rdbuf();
+    return ss.str();
+}
 
-    if (args.empty())
-    {
-        std::cerr << "Usage: " << "[--DUMP-TOKENS] <.bas files>\n";
-        return 1;
-    }
-
-    std::vector<std::string_view> file_names{};
-
-    for (char* arguments : args)
-    {
-        std::string_view temp{ arguments };
-
-        if (temp.ends_with(".bas"))
-        {
-            file_names.emplace_back(arguments);
-            continue;
-        }
-
-        if (temp.starts_with("--"))
-        {
-            std::string flag{ arguments };
-            for (char& c : flag)
-                if (c != '-')
-                    c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-
-            if (flag == DUMP_TOKENS)
-                to_dump_tokens = true;
-            if (flag == COMPILE)
-                to_compile = true;
-        }
-    }
-
-
-    std::string_view fileName{ file_names[0] };
-    fs::path path{ std::string{ fileName } };
+static fs::path resolvePath(std::string_view const fileName)
+{
+    fs::path path{ fileName };
     if (!path.is_absolute())
     {
         try
         {
             path = fs::canonical(path);
         }
-        catch (std::exception const&)
+        catch (...)
         {
-            std::cerr << "Error: Failed to find " << path << '\n';
-            return 1;
+            throw std::runtime_error{ "Failed to find file: " + path.string() };
         }
     }
+    return path;
+}
 
-    std::ifstream reader{ path };
-    if (!reader)
+static void dumpTokens(Lexer const& lexer, std::string const& outFile)
+{
+    std::ofstream ofs{ outFile, std::ios::trunc };
+    if (!ofs)
+        throw std::runtime_error{ "Failed to open " + outFile };
+
+    ofs << lexer;
+}
+
+static void interpret(std::vector<Token>& tokens)
+{
+    pancakes_init();
+    Parser parser{ tokens };
+    auto stmt{ parser.parse() };
+    if (!stmt) return;
+
+    Interpreter interpreter;
+    stmt->accept(interpreter);
+}
+
+static void compile(std::vector<Token>& tokens, std::string_view const inputFile)
+{
+    Parser parser{ tokens };
+    auto stmt{ parser.parse() };
+    if (!stmt) return;
+
+    Compiler compiler;
+    stmt->accept(compiler);
+    compiler.finalizeModule();
+
+    if (llvm::verifyModule(*compiler.module, &llvm::errs()))
+        throw std::runtime_error{ "LLVM verification failed" };
+
+    std::error_code ec;
+    std::string const llPath{ "output.ll" };
+    std::string const objPath{ "output.obj" };
+
+    // Write LLVM IR
     {
-        std::cerr << "Error: Failed to open " << path << " for reading.\n";
-        return 1;
+        llvm::raw_fd_ostream llOut{ llPath, ec, llvm::sys::fs::OF_Text };
+        if (ec)
+            throw std::runtime_error{ "Failed to open output.ll: " + ec.message() };
+        compiler.module->print(llOut, nullptr);
     }
 
-    std::ostringstream ss;
-    ss << reader.rdbuf();
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
 
-    std::string buffer{ ss.str() };
+    std::string const targetTriple{ llvm::sys::getDefaultTargetTriple() };
+    compiler.module->setTargetTriple(targetTriple);
 
-    Lexer lexer{ buffer };
+    std::string error;
+    const llvm::Target* target{ llvm::TargetRegistry::lookupTarget(targetTriple, error) };
+    if (!target) throw std::runtime_error{ error };
 
-    if (to_dump_tokens)
+    llvm::TargetOptions const opt{};
+    constexpr std::optional<llvm::Reloc::Model> relocModel{};
+    auto targetMachine{ target->createTargetMachine(targetTriple, "generic", "", opt, relocModel) };
+    compiler.module->setDataLayout(targetMachine->createDataLayout());
+
+    // Emit object file
     {
-        std::string out_file{ make_tokens_filename(std::string{ file_names[0] }) };
-        std::fstream ofs{ out_file, std::ios::out | std::ios::trunc };
+        llvm::raw_fd_ostream objOut{ objPath, ec, llvm::sys::fs::OF_None };
+        if (ec)
+            throw std::runtime_error{ "Failed to open object file: " + ec.message() };
 
-        if (!ofs)
-        {
-            std::cerr << "Failed to open " << out_file << "\n";
-            return 1;
-        }
+        llvm::legacy::PassManager pass;
+        if (targetMachine->addPassesToEmitFile(pass, objOut, nullptr, llvm::CodeGenFileType::ObjectFile))
+            throw std::runtime_error{ "Failed to emit object file" };
 
-        ofs << lexer;
+        pass.run(*compiler.module);
+        objOut.flush();
     }
 
-    auto tokens{ lexer.tokenize() };
+    fs::path exePath{ inputFile };
+    exePath.replace_extension(".exe");
 
+    if (!linkObjectToExe(std::wstring{ objPath.begin(), objPath.end() }, exePath.wstring()))
+        throw std::runtime_error{ "Linking failed" };
+
+    fs::remove(llPath);
+    fs::remove(objPath);
+}
+
+int main(int const argc, char* argv[])
+{
     try
     {
-        Parser parser{ tokens };
-        auto stmt{ parser.parse() };
-
-        if (!to_compile)
+        if (argc < 2)
         {
-            pancakes_init();
-            Interpreter interpreter;
-            if (stmt) stmt->accept(interpreter);
+            std::cerr << "Usage: [--DUMP-TOKENS] [--COMPILE] <.bas file>\n";
+            return 1;
         }
+
+        std::span const args(argv + 1, argc - 1);
+
+        bool toDumpTokens{ false };
+        bool toCompile{ false };
+        std::vector<std::string_view> fileNames{};
+
+        for (char* argPtr : args)
+        {
+            std::string_view const arg{ argPtr };
+
+            if (arg.ends_with(".bas"))
+            {
+                fileNames.push_back(arg);
+                continue;
+            }
+
+            if (arg.starts_with("--"))
+            {
+                std::string flag{ arg };
+                for (char& c : flag)
+                    if (c != '-') c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+
+                if (flag == DUMP_TOKENS) toDumpTokens = true;
+                if (flag == COMPILE) toCompile = true;
+            }
+        }
+
+        if (fileNames.empty())
+            throw std::runtime_error{ "No .bas file specified" };
+
+        fs::path const path{ resolvePath(fileNames[0]) };
+        std::string const buffer{ readFile(path) };
+
+        Lexer lexer{ buffer };
+        if (toDumpTokens)
+            dumpTokens(lexer, makeTokensFilename(std::string{ fileNames[0] }));
+
+        auto tokens{ lexer.tokenize() }; // mutable vector for Parser
+        if (toCompile)
+            compile(tokens, fileNames[0]);
         else
-        {
-            Compiler compiler;
-            if (stmt) stmt->accept(compiler);
-            compiler.finalizeModule();
+            interpret(tokens);
 
-            if (llvm::verifyModule(*compiler.module, &llvm::errs()))
-            {
-                llvm::errs() << "LLVM verification failed\n";
-                return 1;
-            }
-
-            std::error_code ec;
-            std::string llPath{ "output.ll" };
-            std::string objPathStr{ "output.obj" };
-            {
-                llvm::raw_fd_ostream llOut{ llPath, ec, llvm::sys::fs::OF_Text };
-                if (ec)
-                {
-                    llvm::errs() << "Failed to open output.ll: " << ec.message() << "\n";
-                    return 1;
-                }
-                compiler.module->print(llOut, nullptr);
-            }
-
-            llvm::InitializeNativeTarget();
-            llvm::InitializeNativeTargetAsmPrinter();
-            llvm::InitializeNativeTargetAsmParser();
-
-            std::string targetTriple{ llvm::sys::getDefaultTargetTriple() };
-            compiler.module->setTargetTriple(targetTriple);
-
-            std::string error;
-            const llvm::Target* target{ llvm::TargetRegistry::lookupTarget(targetTriple, error) };
-            if (!target)
-            {
-                llvm::errs() << error << "\n";
-                return 1;
-            }
-
-            llvm::TargetOptions opt;
-            std::optional<llvm::Reloc::Model> relocModel;
-            std::unique_ptr<llvm::TargetMachine> targetMachine{ target->createTargetMachine(targetTriple, "generic", "", opt, relocModel) };
-
-            compiler.module->setDataLayout(targetMachine->createDataLayout());
-
-            {
-                llvm::raw_fd_ostream objOut{ objPathStr, ec, llvm::sys::fs::OF_None };
-                if (ec)
-                    return 1;
-
-                llvm::legacy::PassManager pass;
-                if (targetMachine->addPassesToEmitFile(pass, objOut, nullptr, llvm::CodeGenFileType::ObjectFile))
-                    return 1;
-                pass.run(*compiler.module);
-                objOut.flush();
-            }
-
-            auto exePath{ fs::path(file_names[0]) };
-            exePath.replace_extension(".exe");
-
-            if (!linkObjectToExe(std::wstring{ objPathStr.begin(), objPathStr.end() }, exePath.wstring()))
-                return 1;
-            fs::remove(llPath);
-            fs::remove(objPathStr);
-        }
+        return 0;
     }
     catch (std::runtime_error const& e)
     {
-        std::cerr << "Error: " << e.what() << '\n';
+        std::cerr << "Error: " << e.what() << "\n";
         return 1;
     }
-
-    return 0;
 }
