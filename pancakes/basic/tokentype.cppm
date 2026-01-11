@@ -17,11 +17,12 @@ export enum class TokenType
         NUMBER, STRING,
 
         /* Identifiers */
-        IDENTIFIER,
+        IDENTIFIER, SPC, TAB,
 
         /* Punctuation or Misc */
-        COMMA, LPAREN, RPAREN, COLON,
+        COMMA, LPAREN, RPAREN, COLON, SEMICOLON, APOSTROPHE,
 
+        END_OF_LINE,
         END_OF_FILE,
 
         UNKNOWN
@@ -32,10 +33,17 @@ export constexpr std::string_view TokenTypeName(TokenType const t)
     switch (t)
     {
         case TokenType::IDENTIFIER: return "IDENTIFIER";
+        case TokenType::END_OF_LINE: return "END_OF_LINE";
+        case TokenType::NUMBER: return "NUMBER";
         case TokenType::PRINT: return "PRINT";
         case TokenType::STRING: return "STRING";
         case TokenType::END_OF_FILE: return "EOF";
         case TokenType::INPUT: return "INPUT";
+        case TokenType::LPAREN: return "LPAREN";
+        case TokenType::RPAREN: return "RPAREN";
+        case TokenType::COMMA: return "COMMA";
+        case TokenType::APOSTROPHE: return "APOSTROPHE";
+        case TokenType::SEMICOLON: return "SEMICOLON";
         default: return "UNKNOWN";
     }
 }
