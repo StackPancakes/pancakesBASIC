@@ -18,7 +18,6 @@
 #include <fstream>
 #include <iostream>
 #include <windows.h>
-#include "config.h"
 
 import pancakes.basic.compiler;
 import pancakes.basic.lexer;
@@ -48,12 +47,24 @@ static std::string makeTokensFilename(std::string const& basFile)
     return basFile + ".tokens.txt";
 }
 
+static std::wstring getCompilerDirectory()
+{
+    wchar_t buffer[MAX_PATH];
+    if (GetModuleFileNameW(nullptr, buffer, MAX_PATH))
+    {
+        std::filesystem::path p(buffer);
+        return p.parent_path().wstring();
+    }
+    return L".";
+}
+
 static bool linkObjectToExe(std::wstring const& objFile, std::wstring const& exeFile)
 {
+    std::wstring const runtimeLibPath{ getCompilerDirectory() + L"\\pancakes_runtime.lib" };
     std::wstring const commandLine
     {
         L"link.exe /nologo \"" + objFile + L"\" \"" +
-        PANCAKES_RUNTIME_LIB_DIR + L"/pancakes_runtime.lib\" /OUT:\"" +
+        runtimeLibPath + L"\" /OUT:\"" +
         exeFile + L"\" /SUBSYSTEM:CONSOLE /NODEFAULTLIB /ENTRY:pancakesSTART kernel32.lib"
     };
 
