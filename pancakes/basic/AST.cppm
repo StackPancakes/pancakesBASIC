@@ -1,73 +1,77 @@
 module;
-#include <string_view>
 #include <string>
-#include <memory>
 #include <vector>
 #include <optional>
+#include <variant>
+
 export module pancakes.basic.AST;
-
-export struct ASTVisitor;
-
-export struct ASTNode
-{
-    virtual ~ASTNode() = default;
-    virtual void accept(ASTVisitor& visitor) = 0;
-};
-
-export struct ProgramNode : ASTNode
-{
-    std::vector<std::unique_ptr<ASTNode>> statements;
-    void accept(ASTVisitor& visitor) override;
-};
 
 export struct PrintItem
 {
-    enum class Kind
+    struct Expression
     {
-        Expression,
-        Tab,
-        Spc,
-        Sep
+        std::string text;
+        bool isStringLiteral{};
     };
 
-    Kind kind{};
-    std::string text{};
-    std::optional<std::string> second{};
-    bool isStringLiteral{};
+    struct Tab
+    {
+        std::string first;
+        std::optional<std::string> second;
+    };
+
+    struct Spc
+    {
+        std::string count;
+    };
+
+    struct Sep
+    {
+        std::string symbol;
+    };
+
+    std::variant<Expression, Tab, Spc, Sep> value;
 };
 
-export struct PrintNode final : ASTNode
+export struct PrintNode
 {
     std::vector<PrintItem> items;
-    void accept(ASTVisitor& visitor) override;
 };
 
-export struct InputNode final : ASTNode
+export struct InputNode
 {
     std::string variable;
-    explicit InputNode(std::string_view const v) : variable{ v } {}
-    void accept(ASTVisitor& visitor) override;
 };
 
-export struct ASTVisitor
+export using Statement = std::variant<PrintNode, InputNode>;
+
+export struct ProgramNode
 {
-    virtual ~ASTVisitor() = default;
-    virtual void visit(PrintNode* node) = 0;
-    virtual void visit(InputNode* node) = 0;
+    std::vector<Statement> statements;
 };
 
-inline void ProgramNode::accept(ASTVisitor& visitor)
+export template <typename Derived>
+struct ASTVisitor
 {
-    for (auto const& stmt : statements)
-        stmt->accept(visitor);
-}
+    void run(ProgramNode& program)
+    {
+        for (auto& stmt : program.statements)
+            dispatch(stmt);
+    }
 
-inline void PrintNode::accept(ASTVisitor& visitor)
-{
-    visitor.visit(this);
-}
+    void dispatch(Statement& stmt)
+    {
+        std::visit([this](auto& node)
+        {
+            static_cast<Derived*>(this)->visit(node);
+        }, stmt);
+    }
 
-inline void InputNode::accept(ASTVisitor& visitor)
-{
-    visitor.visit(this);
-}
+    void dispatch(PrintItem& item)
+    {
+        std::visit([this](auto& node)
+        {
+            static_cast<Derived*>(this)->visit(node);
+        }, item.value);
+    }
+};
