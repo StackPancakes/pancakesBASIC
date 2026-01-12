@@ -1,9 +1,10 @@
 module;
-#include <memory>
-#include <vector>
 #include <stdexcept>
 #include <format>
 #include <string>
+#include <span>
+#include <variant>
+
 export module pancakes.basic.parser;
 
 import pancakes.basic.tokentype;
@@ -12,17 +13,34 @@ import pancakes.basic.AST;
 
 export struct Parser
 {
-    std::vector<Token> const& tokens;
-    size_t pos;
+    std::span<Token const> tokens;
+    size_t pos{ 0 };
 
-    explicit Parser(std::vector<Token>& t) : tokens{ t }, pos{ 0 } {}
-
-    [[nodiscard]] Token peek() const { return tokens[pos]; }
-    Token consume() { return tokens[pos++]; }
-
-    std::unique_ptr<ProgramNode> parse()
+    explicit Parser(std::span<Token const> const t) : tokens{ t }
     {
-        auto program{ std::make_unique<ProgramNode>() };
+    }
+
+    [[nodiscard]] Token const& peek() const
+    {
+        if (pos >= tokens.size())
+        {
+            return tokens.back();
+        }
+        return tokens[pos];
+    }
+
+    Token const& consume()
+    {
+        if (pos >= tokens.size())
+        {
+            return tokens.back();
+        }
+        return tokens[pos++];
+    }
+
+    ProgramNode parse()
+    {
+        ProgramNode program{};
 
         while (peek().type != TokenType::END_OF_FILE)
         {
@@ -32,20 +50,23 @@ export struct Parser
                 continue;
             }
 
-            switch (Token tok{ peek() }; tok.type)
+            switch (peek().type)
             {
                 case TokenType::PRINT:
-                    program->statements.push_back(parsePrint());
+                {
+                    program.statements.emplace_back(parsePrint());
                     break;
+                }
                 case TokenType::INPUT:
-                    program->statements.push_back(parseInput());
+                {
+                    program.statements.emplace_back(parseInput());
                     break;
+                }
                 default:
-                    throw std::runtime_error{
-                        std::format("Unexpected statement at ({}, {})",
-                                tok.position.line,
-                                tok.position.column)
-                    };
+                {
+                    Token const tok{ peek() };
+                    throw std::runtime_error{ std::format("Unexpected statement at ({}, {})", tok.position.line, tok.position.column) };
+                }
             }
         }
 
@@ -53,20 +74,20 @@ export struct Parser
     }
 
 private:
-
-    std::unique_ptr<PrintNode> parsePrint()
+    PrintNode parsePrint()
     {
-        consume(); // consume PRINT
-        auto node{ std::make_unique<PrintNode>() };
+        consume();
+        PrintNode node{};
 
         while (true)
         {
-            if (Token const next{ peek() }; next.type == TokenType::END_OF_LINE
-                                      ||  next.type == TokenType::COLON
-                                      ||  next.type == TokenType::END_OF_FILE)
+            Token const next{ peek() };
+            if (next.type == TokenType::END_OF_LINE || next.type == TokenType::COLON || next.type == TokenType::END_OF_FILE)
+            {
                 break;
+            }
 
-            node->items.push_back(parsePrintItem());
+            node.items.push_back(parsePrintItem());
         }
 
         return node;
@@ -74,140 +95,105 @@ private:
 
     PrintItem parsePrintItem()
     {
-        auto [type, name, position]{ peek() };
+        Token const tok{ peek() };
         PrintItem item{};
 
-        switch (type)
+        switch (tok.type)
         {
             case TokenType::STRING:
+            {
                 consume();
-                item.kind = PrintItem::Kind::Expression;
-                item.text = std::string{ name };
-                item.isStringLiteral = true;
+                item.value = PrintItem::Expression{ std::string{ tok.name }, true };
                 break;
-
+            }
             case TokenType::IDENTIFIER:
             case TokenType::NUMBER:
+            {
                 consume();
-                item.kind = PrintItem::Kind::Expression;
-                item.text = std::string{ name };
-                item.isStringLiteral = false;
+                item.value = PrintItem::Expression{ std::string{ tok.name }, false };
                 break;
-
+            }
             case TokenType::TAB:
-                parseTab(item);
+            {
+                PrintItem::Tab tab{};
+                parseTab(tab);
+                item.value = tab;
                 break;
-
+            }
             case TokenType::SPC:
-                parseSpc(item);
+            {
+                PrintItem::Spc spc{};
+                parseSpc(spc);
+                item.value = spc;
                 break;
-
+            }
             case TokenType::COMMA:
             case TokenType::SEMICOLON:
             case TokenType::APOSTROPHE:
+            {
                 consume();
-                item.kind = PrintItem::Kind::Sep;
-                item.text = std::string{ name };
+                item.value = PrintItem::Sep{ std::string{ tok.name } };
                 break;
-
+            }
             default:
-                throw std::runtime_error{
-                    std::format("Unexpected token '{}' in PRINT at ({}, {})",
-                            name,
-                            position.line,
-                            position.column)
-                };
+            {
+                throw std::runtime_error{ std::format("Unexpected token in PRINT at ({}, {})", tok.position.line, tok.position.column) };
+            }
         }
 
         return item;
     }
 
-    void parseTab(PrintItem& item)
+    void parseTab(PrintItem::Tab& tab)
     {
-        consume(); // consume TAB
-        item.kind = PrintItem::Kind::Tab;
-
+        consume();
         if (peek().type == TokenType::LPAREN)
         {
-            consume(); // consume '('
-
-            if (peek().type == TokenType::IDENTIFIER
-            ||  peek().type == TokenType::NUMBER
-            ||  peek().type == TokenType::STRING)
+            consume();
+            if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER || peek().type == TokenType::STRING)
             {
-                Token const arg{ consume() };
-                item.text = std::string{ arg.name };
-
+                tab.first = std::string{ consume().name };
                 if (peek().type == TokenType::COMMA)
                 {
                     consume();
-                    if (peek().type == TokenType::IDENTIFIER
-                    ||  peek().type == TokenType::NUMBER
-                    ||  peek().type == TokenType::STRING)
+                    if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER || peek().type == TokenType::STRING)
                     {
-                        Token const arg2{ consume() };
-                        item.second = std::string{ arg2.name };
+                        tab.second = std::string{ consume().name };
                     }
-                    else
-                        throw std::runtime_error{
-                            std::format("Expected second TAB arg at ({}, {})",
-                                    peek().position.line,
-                                    peek().position.column)
-                        };
                 }
             }
-
             if (peek().type == TokenType::RPAREN)
-                consume(); // consume ')'
-            else
-                throw std::runtime_error{
-                    std::format("Expected ')' after TAB args at ({}, {})",
-                            peek().position.line,
-                            peek().position.column)
-                };
+            {
+                consume();
+            }
         }
     }
 
-    void parseSpc(PrintItem& item)
+    void parseSpc(PrintItem::Spc& spc)
     {
-        consume(); // consume SPC
-        item.kind = PrintItem::Kind::Spc;
-
+        consume();
         if (peek().type == TokenType::LPAREN)
         {
-            consume(); // consume '('
-
-            if (peek().type == TokenType::IDENTIFIER
-            ||  peek().type == TokenType::NUMBER
-            ||  peek().type == TokenType::STRING)
+            consume();
+            if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER || peek().type == TokenType::STRING)
             {
-                Token arg{ consume() };
-                item.text = std::string{ arg.name };
+                spc.count = std::string{ consume().name };
             }
-
             if (peek().type == TokenType::RPAREN)
-                consume(); // consume ')'
-            else
-                throw std::runtime_error{
-                    std::format("Expected ')' after SPC arg at ({}, {})",
-                            peek().position.line,
-                            peek().position.column)
-                };
+            {
+                consume();
+            }
         }
     }
 
-    std::unique_ptr<InputNode> parseInput()
+    InputNode parseInput()
     {
-        consume(); // consume INPUT
-        auto [type, name, position]{ consume() };
-
-        if (type != TokenType::IDENTIFIER)
-            throw std::runtime_error{
-                std::format("Expected identifier after INPUT at ({}, {})",
-                        position.line,
-                        position.column)
-            };
-
-        return std::make_unique<InputNode>(name);
+        consume();
+        Token const tok{ consume() };
+        if (tok.type != TokenType::IDENTIFIER)
+        {
+            throw std::runtime_error{ std::format("Expected identifier after INPUT at ({}, {})", tok.position.line, tok.position.column) };
+        }
+        return InputNode{ std::string{ tok.name } };
     }
 };
