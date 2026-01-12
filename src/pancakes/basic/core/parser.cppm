@@ -17,24 +17,19 @@ export struct Parser
     size_t pos{ 0 };
 
     explicit Parser(std::span<Token const> const t) : tokens{ t }
-    {
-    }
+    {}
 
     [[nodiscard]] Token const& peek() const
     {
         if (pos >= tokens.size())
-        {
             return tokens.back();
-        }
         return tokens[pos];
     }
 
     Token const& consume()
     {
         if (pos >= tokens.size())
-        {
             return tokens.back();
-        }
         return tokens[pos++];
     }
 
@@ -83,9 +78,7 @@ private:
         {
             Token const next{ peek() };
             if (next.type == TokenType::END_OF_LINE || next.type == TokenType::COLON || next.type == TokenType::END_OF_FILE)
-            {
                 break;
-            }
 
             node.items.push_back(parsePrintItem());
         }
@@ -136,9 +129,7 @@ private:
                 break;
             }
             default:
-            {
                 throw std::runtime_error{ std::format("Unexpected token in PRINT at ({}, {})", tok.position.line, tok.position.column) };
-            }
         }
 
         return item;
@@ -157,15 +148,11 @@ private:
                 {
                     consume();
                     if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER || peek().type == TokenType::STRING)
-                    {
                         tab.second = std::string{ consume().name };
-                    }
                 }
             }
             if (peek().type == TokenType::RPAREN)
-            {
                 consume();
-            }
         }
     }
 
@@ -176,24 +163,18 @@ private:
         {
             consume();
             if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER || peek().type == TokenType::STRING)
-            {
                 spc.count = std::string{ consume().name };
-            }
             if (peek().type == TokenType::RPAREN)
-            {
                 consume();
-            }
         }
     }
 
     InputNode parseInput()
     {
         consume();
-        Token const tok{ consume() };
-        if (tok.type != TokenType::IDENTIFIER)
-        {
-            throw std::runtime_error{ std::format("Expected identifier after INPUT at ({}, {})", tok.position.line, tok.position.column) };
-        }
-        return InputNode{ std::string{ tok.name } };
+        auto const [type, name, position]{ consume() };
+        if (type != TokenType::IDENTIFIER)
+            throw std::runtime_error{ std::format("Expected identifier after INPUT at ({}, {})", position.line, position.column) };
+        return InputNode{ std::string{ name } };
     }
 };
