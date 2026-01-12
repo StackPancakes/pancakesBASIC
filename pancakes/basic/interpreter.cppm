@@ -1,7 +1,9 @@
 module;
-#include <format>
-#include <string>
 #include <unordered_map>
+#include <string>
+#include <variant>
+#include <optional>
+#include <format>
 #include <algorithm>
 
 export module pancakes.basic.interpreter;
@@ -13,135 +15,123 @@ extern "C"
     float pancakes_parse_float(char const* str, int len);
     void pancakes_print_string(char const* str, int len);
     int pancakes_input(char* buffer, int bufferLen);
-
     struct WindowsSize { int width; int height; };
-
     WindowsSize pancakes_get_windows_size();
     void pancakes_move_cursor_to(int col, int row);
     void pancakes_get_cursor_pos(int* col, int* row);
 }
 
-export struct Interpreter final : ASTVisitor
+export struct Interpreter final : ASTVisitor<Interpreter>
 {
+    std::unordered_map<std::string, float> variables{};
+    int fieldWidth{ 10 };
+    int screenWidth{ 80 };
+    int screenHeight{ 25 };
+
     Interpreter()
-        : fieldWidth{ 10 }, screenWidth{ 80 }, screenHeight{ 25 }
     {
-        auto const [w, h]{ pancakes_get_windows_size() };
-        if (w > 0 && h > 0)
+        if (auto const [width, height]{ pancakes_get_windows_size() }; width > 0 && height > 0)
         {
-            screenWidth = w;
-            screenHeight = h;
+            screenWidth = width;
+            screenHeight = height;
         }
     }
 
-    void visit(PrintNode* node) override
+    void visit(PrintNode& node)
     {
-        if (node->items.empty())
-            return printNewline();
+        for (auto& item : node.items)
+            dispatch(item);
 
-        for (auto const& item : node->items)
-            emitPrintItem(item);
+        if (node.items.empty())
+        {
+            printNewline();
+            return;
+        }
 
-        if (bool const suppressNewline{ node->items.back().kind == PrintItem::Kind::Sep }; !suppressNewline)
+        bool const suppressNewline{ std::visit([]<typename T0>(T0 const& x) -> bool
+        {
+            using T = std::decay_t<T0>;
+            if constexpr (std::is_same_v<T, PrintItem::Sep>)
+                return x.symbol == ";";
+            return false;
+        }, node.items.back().value) };
+
+        if (!suppressNewline)
             printNewline();
     }
 
-    void visit(InputNode* node) override
+    void visit(InputNode const& node)
     {
         char buffer[256]{};
-        int const count{ pancakes_input(buffer, static_cast<int>(std::size(buffer))) };
-        variables[node->variable] = pancakes_parse_float(buffer, count);
+        int const count{ pancakes_input(buffer, 256) };
+        variables[node.variable] = pancakes_parse_float(buffer, count);
     }
 
-private:
-    std::unordered_map<std::string, float> variables;
-    int const fieldWidth;
-    int screenWidth;
-    int screenHeight;
-
-    static std::pair<int, int> getCursorPos()
+    void visit(PrintItem::Expression const& x)
     {
-        int col, row;
-        pancakes_get_cursor_pos(&col, &row);
-        return { col, row };
+        if (x.isStringLiteral)
+            printRaw(x.text);
+        else
+            printValue(x.text);
     }
 
-    static void printNewline()
+    void visit(PrintItem::Tab const& x) const
     {
-        pancakes_print_string("\n", 1);
-    }
-
-    void emitPrintItem(PrintItem const& item)
-    {
-        switch (item.kind)
-        {
-            case PrintItem::Kind::Expression:
-                if (item.isStringLiteral) printRaw(item.text);
-                else printValue(item.text);
-                break;
-            case PrintItem::Kind::Tab: handleTab(item); break;
-            case PrintItem::Kind::Spc: handleSpc(item); break;
-            case PrintItem::Kind::Sep: handleSep(item.text); break;
-        }
-    }
-
-    void handleSep(std::string_view const sep) const
-    {
-        if (sep == "'")
-            printNewline();
-        else if (sep == ",")
-        {
-            int const currentX{ getCursorPos().first };
-            int const spaces{ fieldWidth - (currentX % fieldWidth) };
-            printSpaces(spaces);
-        }
-    }
-
-    void handleTab(PrintItem const& item) const
-    {
-        if (item.text.empty())
+        if (x.first.empty())
             return;
 
-        int const x{ std::stoi(item.text) };
-        auto const [curCol, curRow]{ getCursorPos() };
+        int const destX{ std::clamp(std::stoi(x.first), 0, screenWidth - 1) };
+        int col{ 0 }, row{ 0 };
+        pancakes_get_cursor_pos(&col, &row);
+        int destY{ row };
 
-        int destX{ std::clamp(x, 0, screenWidth - 1) };
-        int destY{ curRow };
-
-        if (item.second.has_value())
-            destY = std::clamp(std::stoi(item.second.value()), 0, screenHeight - 1);
+        if (x.second.has_value())
+            destY = std::clamp(std::stoi(*x.second), 0, screenHeight - 1);
 
         pancakes_move_cursor_to(destX, destY);
     }
 
-    static void handleSpc(PrintItem const& item)
+    static void visit(PrintItem::Spc const& x)
     {
-        if (!item.text.empty())
-            printSpaces(std::stoi(item.text));
+        if (!x.count.empty())
+            printSpaces(std::stoi(x.count));
     }
 
+    void visit(PrintItem::Sep const& x) const
+    {
+        if (x.symbol == "'")
+            printNewline();
+        else if (x.symbol == ",")
+        {
+            int col{ 0 }, row{ 0 };
+            pancakes_get_cursor_pos(&col, &row);
+            printSpaces(fieldWidth - (col % fieldWidth));
+        }
+    }
+
+private:
     void printValue(std::string const& varName)
     {
         if (auto it{ variables.find(varName) }; it != variables.end())
-        {
-            std::string const s{ std::format("{}", it->second) };
-            pancakes_print_string(s.data(), static_cast<int>(s.size()));
-        }
-        else
-            printRaw(varName);
+            printRaw(std::format("{}", it->second));
     }
 
     static void printRaw(std::string_view const str)
     {
-        if (!str.empty())
-            pancakes_print_string(str.data(), static_cast<int>(str.size()));
+        pancakes_print_string(str.data(), static_cast<int>(str.size()));
     }
 
-    static void printSpaces(int const n)
+    static void printNewline()
     {
-        if (n <= 0)
-            return;
-        std::string const spaces(static_cast<std::size_t>(n), ' ');
-        pancakes_print_string(spaces.data(), n);
+        printRaw("\n");
+    }
+
+    static void printSpaces(int n)
+    {
+        if (n > 0)
+        {
+            std::string const s(static_cast<size_t>(n), ' ');
+            printRaw(s);
+        }
     }
 };
