@@ -196,19 +196,18 @@ extern "C"
         return len;
     }
 
-    struct WindowsSize { int width; int height; };
-
-    WindowsSize pancakes_get_windows_size()
+    void pancakes_get_windows_size(int* outWidth, int* outHeight)
     {
         CONSOLE_SCREEN_BUFFER_INFO csbi;
         if (!GetConsoleScreenBufferInfo(out(), &csbi))
-            return { 80, 25 };
-
-        return
         {
-            csbi.srWindow.Right - csbi.srWindow.Left + 1,
-            csbi.srWindow.Bottom - csbi.srWindow.Top + 1
-        };
+            *outWidth = 80;
+            *outHeight = 25;
+            return;
+        }
+
+        *outWidth = csbi.srWindow.Right - csbi.srWindow.Left + 1;
+        *outHeight = csbi.srWindow.Bottom - csbi.srWindow.Top + 1;
     }
 
     void pancakes_move_cursor_to(int const col, int const row)
@@ -221,8 +220,8 @@ extern "C"
         int const y{ row + csbi.srWindow.Top };
 
         COORD pos;
-        pos.X = static_cast<SHORT>(x < 0 ? 0 : (x >= csbi.dwSize.X ? csbi.dwSize.X - 1 : x));
-        pos.Y = static_cast<SHORT>(y < 0 ? 0 : (y >= csbi.dwSize.Y ? csbi.dwSize.Y - 1 : y));
+        pos.X = static_cast<SHORT>(x < 0 ? 0 : x >= csbi.dwSize.X ? csbi.dwSize.X - 1 : x);
+        pos.Y = static_cast<SHORT>(y < 0 ? 0 : y >= csbi.dwSize.Y ? csbi.dwSize.Y - 1 : y);
 
         SetConsoleCursorPosition(out(), pos);
     }

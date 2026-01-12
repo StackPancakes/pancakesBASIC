@@ -19,8 +19,7 @@ extern "C"
     void pancakes_print_string(char const* str, int len);
     void pancakes_print_number(float val);
     int pancakes_input(char* buffer, int bufferLen);
-    struct WindowsSize { int width; int height; };
-    WindowsSize pancakes_get_windows_size();
+    void pancakes_get_windows_size(int* col, int* row);
     void pancakes_move_cursor_to(int col, int row);
     void pancakes_get_cursor_pos(int* col, int* row);
 }
@@ -34,7 +33,9 @@ export struct Interpreter final
 
     Interpreter()
     {
-        if (auto const [width, height]{ pancakes_get_windows_size() }; width > 0 && height > 0)
+        int width{ 0 }, height{ 0 };
+        pancakes_get_windows_size(&width, &height);
+        if (width > 0 && height > 0)
         {
             screenWidth = width;
             screenHeight = height;
