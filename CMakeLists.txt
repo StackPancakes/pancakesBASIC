@@ -2,6 +2,13 @@ cmake_minimum_required(VERSION 3.28)
 project(PancakesBASIC LANGUAGES CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+
+if(MSVC)
+    string(REGEX REPLACE "/RTC[^ ]*" "" CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG}")
+endif()
 
 find_library(DIA_LIB NAMES diaguids.lib
         PATHS
@@ -10,66 +17,39 @@ find_library(DIA_LIB NAMES diaguids.lib
         REQUIRED
 )
 add_library(diaguids_fix UNKNOWN IMPORTED)
+set_target_properties(diaguids_fix PROPERTIES IMPORTED_LOCATION "${DIA_LIB}")
 
-set_target_properties(diaguids_fix PROPERTIES
-        IMPORTED_LOCATION "${DIA_LIB}"
-)
+find_package(LLVM REQUIRED CONFIG PATHS "C:/Program Files/LLVM/lib/cmake/llvm")
 
-set(CMAKE_CXX_STANDARD 20)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
-
-find_package(LLVM REQUIRED CONFIG
-        PATHS "C:/Program Files/LLVM/lib/cmake/llvm"
-)
-
-include_directories(${LLVM_INCLUDE_DIRS})
-add_definitions(${LLVM_DEFINITIONS})
-
-add_executable(PancakesBASIC src/main.cpp
-)
+add_executable(PancakesBASIC source/main.cpp)
 
 target_sources(PancakesBASIC
         PRIVATE
         FILE_SET CXX_MODULES FILES
-        src/pancakes/basic/frontend/util.cppm
-        src/pancakes/basic/core/visitor.cppm
-        src/pancakes/basic/settings/settings.cppm
-        src/pancakes/basic/frontend/tokentype.cppm
-        src/pancakes/basic/frontend/symbols.cppm
-        src/pancakes/basic/frontend/keywords.cppm
-        src/pancakes/basic/frontend/token.cppm
-        src/pancakes/basic/frontend/lexer.cppm
-        src/pancakes/basic/core/AST.cppm
-        src/pancakes/basic/core/parser.cppm
-        src/pancakes/execution/compiler.cppm
-        src/pancakes/execution/interpreter.cppm
+        source/pancakes/basic/frontend/util.cppm
+        source/pancakes/basic/core/visitor.cppm
+        source/pancakes/basic/settings/settings.cppm
+        source/pancakes/basic/frontend/tokentype.cppm
+        source/pancakes/basic/frontend/symbols.cppm
+        source/pancakes/basic/frontend/keywords.cppm
+        source/pancakes/basic/frontend/token.cppm
+        source/pancakes/basic/frontend/lexer.cppm
+        source/pancakes/basic/core/AST.cppm
+        source/pancakes/basic/core/parser.cppm
+        source/pancakes/execution/compiler.cppm
+        source/pancakes/execution/interpreter.cppm
 )
 
 target_include_directories(PancakesBASIC PRIVATE ${LLVM_INCLUDE_DIRS})
 target_compile_definitions(PancakesBASIC PRIVATE ${LLVM_DEFINITIONS})
 
 llvm_map_components_to_libnames(llvm_libs
-        core
-        support
-        native
-        codegen
-        target
-        analysis
-        mc
-        bitreader
-        remarks
-        bitstreamreader
-        targetparser
-        profiledata
-        demangle
-        ipo
-        globalisel
+        core support native codegen target analysis mc
+        bitreader remarks bitstreamreader targetparser
+        profiledata demangle ipo globalisel
 )
 
-add_library(pancakes_runtime STATIC
-        runtime/pancakes_runtime.cpp
-)
+add_library(pancakes_runtime STATIC runtime/pancakes_runtime.cpp)
 target_include_directories(pancakes_runtime PUBLIC runtime)
 
 target_link_libraries(PancakesBASIC PRIVATE
@@ -84,25 +64,17 @@ target_link_libraries(PancakesBASIC PRIVATE
 
 if(MSVC)
     target_compile_options(PancakesBASIC PRIVATE /EHsc /wd4624)
+    target_compile_options(pancakes_runtime PRIVATE /GS- /O2)
 endif()
 
-set(PANCAKES_RUNTIME_LIB_DIR "${CMAKE_INSTALL_PREFIX}/PancakesBASIC/lib")
-configure_file(runtime/config.h.in ${CMAKE_CURRENT_BINARY_DIR}/config.h @ONLY)
-target_include_directories(PancakesBASIC PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
-
-if(MSVC)
-    target_compile_options(pancakes_runtime PRIVATE
-            /GS-
-            /O2
-    )
-endif()
-
-install(TARGETS pancakes_runtime
-        ARCHIVE DESTINATION PancakesBASIC/lib
-        LIBRARY DESTINATION PancakesBASIC/lib
-        RUNTIME DESTINATION PancakesBASIC/bin
+add_custom_command(TARGET PancakesBASIC POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        $<TARGET_FILE:pancakes_runtime>
+        $<TARGET_FILE_DIR:PancakesBASIC>
 )
 
-install(TARGETS PancakesBASIC
+install(TARGETS PancakesBASIC pancakes_runtime
         RUNTIME DESTINATION bin
+        ARCHIVE DESTINATION bin
+        LIBRARY DESTINATION bin
 )
