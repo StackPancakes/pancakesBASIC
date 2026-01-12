@@ -1,4 +1,5 @@
 #define WIN32_LEAN_AND_MEAN
+#include <cstdint>
 #include <windows.h>
 
 extern "C"
@@ -13,6 +14,18 @@ extern "C"
         DWORD mode{ 0 };
         if (GetConsoleMode(out(), &mode))
             SetConsoleMode(out(), mode | ENABLE_VIRTUAL_TERMINAL_PROCESSING);
+    }
+
+    static bool is_console_out()
+    {
+        DWORD mode;
+        return GetConsoleMode(out(), &mode) != 0;
+    }
+
+    static bool is_console_in()
+    {
+        DWORD mode;
+        return GetConsoleMode(in(), &mode) != 0;
     }
 
     float pancakes_parse_float(char const* str, int const len)
@@ -71,9 +84,12 @@ extern "C"
             {
                 DWORD written;
                 if (i > start)
-                    WriteConsoleA(out(), str + start, static_cast<DWORD>(i - start), &written, nullptr);
+                    WriteFile(out(), str + start, static_cast<DWORD>(i - start), &written, nullptr);
 
-                WriteConsoleA(out(), "\r\n", 2, &written, nullptr);
+                if (is_console_out())
+                    WriteFile(out(), "\r\n", 2, &written, nullptr);
+                else
+                    WriteFile(out(), "\n", 1, &written, nullptr);
                 start = i + 1;
             }
         }
@@ -81,7 +97,7 @@ extern "C"
         if (len > start)
         {
             DWORD written;
-            WriteConsoleA(out(), str + start, static_cast<DWORD>(len - start), &written, nullptr);
+            WriteFile(out(), str + start, static_cast<DWORD>(len - start), &written, nullptr);
         }
     }
 
@@ -95,6 +111,8 @@ extern "C"
             buf[i++] = '-';
             val = -val;
         }
+
+        val += 0.000005f;
 
         int intPart{ static_cast<int>(val) };
         float fracPart{ val - static_cast<float>(intPart) };
@@ -110,25 +128,64 @@ extern "C"
         while (j > 0)
             buf[i++] = temp[--j];
 
-        buf[i++] = '.';
-        for (int k{ 0 }; k < 4; ++k)
+        if (fracPart > 0.00001f)
         {
-            fracPart *= 10.0f;
-            int const digit{ static_cast<int>(fracPart) };
-            buf[i++] = static_cast<char>(digit + '0');
-            fracPart -= static_cast<float>(digit);
+            buf[i++] = '.';
+            for (int k{ 0 }; k < 4; ++k)
+            {
+                fracPart *= 10.0f;
+                int const digit{ static_cast<int>(fracPart) };
+                buf[i++] = static_cast<char>(digit + '0');
+                fracPart -= static_cast<float>(digit);
+            }
+
+            while (i > 0 && buf[i - 1] == '0') i--;
+            if (i > 0 && buf[i - 1] == '.') i--;
         }
 
         pancakes_print_string(buf, i);
-        pancakes_print_string("\n", 1);
+    }
+
+    void pancakes_print_int(std::int32_t const val)
+    {
+        if (val == 0)
+        {
+            pancakes_print_string("0", 1);
+            return;
+        }
+        char buf[12];
+        int i{ 11 };
+        bool const neg{ val < 0 };
+        unsigned int n{ neg ? -static_cast<unsigned int>(val) : val };
+
+        while (n > 0)
+        {
+            buf[i--] = static_cast<char>(n % 10 + '0');
+            n /= 10;
+        }
+        if (neg) buf[i--] = '-';
+        pancakes_print_string(&buf[i + 1], 11 - i);
+    }
+
+    void pancakes_print_number(float const val)
+    {
+        if (val == static_cast<float>(static_cast<int32_t>(val)))
+            pancakes_print_int(static_cast<int32_t>(val));
+        else
+            pancakes_print_float(val);
     }
 
     int pancakes_input(char* buffer, int const bufferLen)
     {
         DWORD read{ 0 };
-        if (!ReadConsoleA(in(), buffer, static_cast<DWORD>(bufferLen - 1), &read, nullptr))
+        if (is_console_in())
+            if (!ReadConsoleA(in(), buffer, static_cast<DWORD>(bufferLen - 1), &read, nullptr))
+                goto process;
+
+        if (!ReadFile(in(), buffer, static_cast<DWORD>(bufferLen - 1), &read, nullptr))
             return 0;
 
+        process:
         int len{ static_cast<int>(read) };
         while (len > 0 && (buffer[len - 1] == '\r' || buffer[len - 1] == '\n'))
             --len;
