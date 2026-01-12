@@ -146,26 +146,42 @@ export struct Compiler final
             return;
 
         llvm::Type* i32Ty{ llvm::Type::getInt32Ty(context) };
-
-        llvm::Value* winSize = builder->CreateCall(getWindowsSizeFn);
-        llvm::Value* screenWidthVal = builder->CreateExtractValue(winSize, {0});
-        llvm::Value* screenHeightVal = builder->CreateExtractValue(winSize, {1});
-
-        int const rawX{ std::stoi(x.first) };
-        llvm::Value* xVal{ llvm::ConstantInt::get(i32Ty, rawX) };
         llvm::Value* zero{ llvm::ConstantInt::get(i32Ty, 0) };
-        llvm::Value* clampedX{ emitClamp(xVal, zero, builder->CreateSub(screenWidthVal, llvm::ConstantInt::get(i32Ty, 1))) };
 
-        llvm::AllocaInst* colAlloca{ builder->CreateAlloca(i32Ty, nullptr, "tab_col") };
-        llvm::AllocaInst* rowAlloca{ builder->CreateAlloca(i32Ty, nullptr, "tab_row") };
+        // Prepare two entry-block allocas for width/height and call getWindowsSizeFn(outW, outH)
+        llvm::Function* curFunc{ builder->GetInsertBlock()->getParent() };
+        llvm::IRBuilder<> entryBuilder{ &curFunc->getEntryBlock(), curFunc->getEntryBlock().begin() };
+        llvm::AllocaInst* outW{ entryBuilder.CreateAlloca(i32Ty, nullptr, "out_width") };
+        llvm::AllocaInst* outH{ entryBuilder.CreateAlloca(i32Ty, nullptr, "out_height") };
+
+        builder->CreateCall(getWindowsSizeFn, { outW, outH });
+
+        llvm::Value* screenWidthVal{ builder->CreateLoad(i32Ty, outW) };
+        llvm::Value* screenHeightVal{ builder->CreateLoad(i32Ty, outH) };
+
+        // Clamp X coordinate
+        int rawX{ std::stoi(x.first) };
+        llvm::Value* xVal{ llvm::ConstantInt::get(i32Ty, rawX) };
+        llvm::Value* clampedX{ emitClamp(xVal, zero,
+            builder->CreateSub(screenWidthVal, llvm::ConstantInt::get(i32Ty, 1))) };
+
+        // Cursor position (allocate in entry)
+        llvm::AllocaInst* colAlloca{ entryBuilder.CreateAlloca(i32Ty, nullptr, "tab_col") };
+        llvm::AllocaInst* rowAlloca{ entryBuilder.CreateAlloca(i32Ty, nullptr, "tab_row") };
         builder->CreateCall(getCursorPosFn, { colAlloca, rowAlloca });
-        llvm::Value* destY{ builder->CreateLoad(i32Ty, rowAlloca) };
 
+        // Load current cursor row and clamp it
+        llvm::Value* curRow{ builder->CreateLoad(i32Ty, rowAlloca) };
+        llvm::Value* destY{ emitClamp(curRow, zero,
+            builder->CreateSub(screenHeightVal, llvm::ConstantInt::get(i32Ty, 1))) };
+
+        // Override Y if provided
         if (x.second.has_value())
         {
             int const rawY{ std::stoi(*x.second) };
             llvm::Value* yVal{ llvm::ConstantInt::get(i32Ty, rawY) };
-            destY = emitClamp(yVal, zero, builder->CreateSub(screenHeightVal, llvm::ConstantInt::get(i32Ty, 1)));
+            destY = emitClamp(yVal, zero,
+                builder->CreateSub(screenHeightVal, llvm::ConstantInt::get(i32Ty, 1)));
         }
 
         builder->CreateCall(moveCursorFn, { clampedX, destY });
@@ -254,11 +270,11 @@ private:
 
         llvm::StructType* winStruct{ llvm::StructType::create(context, "WindowsSize") };
         winStruct->setBody({ i32Ty, i32Ty }, false);
-        getWindowsSizeFn = module->getOrInsertFunction("pancakes_get_windows_size", llvm::FunctionType::get(winStruct, false));
+        llvm::PointerType* i32PtrTy{ llvm::PointerType::getUnqual(i32Ty) };
+        getWindowsSizeFn = module->getOrInsertFunction("pancakes_get_windows_size", llvm::FunctionType::get(llvm::Type::getVoidTy(context), { i32PtrTy, i32PtrTy }, false));
 
         moveCursorFn = module->getOrInsertFunction("pancakes_move_cursor_to", llvm::FunctionType::get(voidTy, { i32Ty, i32Ty }, false));
 
-        llvm::PointerType* i32PtrTy{ llvm::PointerType::getUnqual(i32Ty) };
         getCursorPosFn = module->getOrInsertFunction("pancakes_get_cursor_pos", llvm::FunctionType::get(voidTy, { i32PtrTy, i32PtrTy }, false));
     }
 
