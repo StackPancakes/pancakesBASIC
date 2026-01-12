@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.28)
 project(PancakesBASIC LANGUAGES CXX)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 find_library(DIA_LIB NAMES diaguids.lib
         PATHS
         "C:/Program Files/Microsoft Visual Studio/18/Insiders/DIA SDK/lib/amd64"
@@ -44,6 +46,9 @@ target_sources(PancakesBASIC
         src/pancakes/execution/interpreter.cppm
 )
 
+target_include_directories(PancakesBASIC PRIVATE ${LLVM_INCLUDE_DIRS})
+target_compile_definitions(PancakesBASIC PRIVATE ${LLVM_DEFINITIONS})
+
 llvm_map_components_to_libnames(llvm_libs
         core
         support
@@ -78,7 +83,7 @@ target_link_libraries(PancakesBASIC PRIVATE
 )
 
 if(MSVC)
-    target_compile_options(PancakesBASIC PRIVATE /EHsc /MD /wd4624)
+    target_compile_options(PancakesBASIC PRIVATE /EHsc /wd4624)
 endif()
 
 set(PANCAKES_RUNTIME_LIB_DIR "${CMAKE_INSTALL_PREFIX}/PancakesBASIC/lib")
