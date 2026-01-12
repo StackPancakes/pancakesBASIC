@@ -7,8 +7,9 @@
 #include <llvm/TargetParser/Host.h>
 #include <llvm/Support/TargetSelect.h>
 #include <llvm/IR/Verifier.h>
+#include <llvm/IR/Module.h>
+#include <llvm/ADT/ilist_node.h>
 #include <system_error>
-#include <memory>
 #include <string>
 #include <vector>
 #include <span>
@@ -16,7 +17,6 @@
 #include <sstream>
 #include <fstream>
 #include <iostream>
-#include <optional>
 #include <windows.h>
 #include "config.h"
 
