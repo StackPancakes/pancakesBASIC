@@ -3,7 +3,7 @@ module;
 #include <string_view>
 export module pancakes.basic.keywords;
 
-import pancakes.basic.setting.settings;
+import pancakes.basic.settings;
 import pancakes.basic.tokentype;
 
 export std::unordered_map<std::string_view, TokenType, CaseInsensitiveHash, CaseInsensitiveEqual> const keywords
