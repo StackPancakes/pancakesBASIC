@@ -9,11 +9,15 @@ module;
 export module pancakes.basic.interpreter;
 
 import pancakes.basic.AST;
+import pancakes.basic.settings;
+import pancakes.basic.visitor;
+import pancakes.basic.util;
 
 extern "C"
 {
     float pancakes_parse_float(char const* str, int len);
     void pancakes_print_string(char const* str, int len);
+    void pancakes_print_number(float val);
     int pancakes_input(char* buffer, int bufferLen);
     struct WindowsSize { int width; int height; };
     WindowsSize pancakes_get_windows_size();
@@ -21,9 +25,9 @@ extern "C"
     void pancakes_get_cursor_pos(int* col, int* row);
 }
 
-export struct Interpreter final : ASTVisitor<Interpreter>
+export struct Interpreter final
 {
-    std::unordered_map<std::string, float> variables{};
+    std::unordered_map<std::string, float, CaseInsensitiveHash, CaseInsensitiveEqual> variables{};
     int fieldWidth{ 10 };
     int screenWidth{ 80 };
     int screenHeight{ 25 };
@@ -37,10 +41,15 @@ export struct Interpreter final : ASTVisitor<Interpreter>
         }
     }
 
+    void run(ProgramNode& program)
+    {
+        visitAll(program.statements, ConstexprVisitor{ *this });
+    }
+
     void visit(PrintNode& node)
     {
-        for (auto& item : node.items)
-            dispatch(item);
+        for (auto const&[value] : node.items)
+            std::visit(ConstexprVisitor{ *this }, value);
 
         if (node.items.empty())
         {
@@ -52,7 +61,7 @@ export struct Interpreter final : ASTVisitor<Interpreter>
         {
             using T = std::decay_t<T0>;
             if constexpr (std::is_same_v<T, PrintItem::Sep>)
-                return x.symbol == ";";
+                return x.symbol == ";" || x.symbol == "," || x.symbol == "'";
             return false;
         }, node.items.back().value) };
 
@@ -71,6 +80,11 @@ export struct Interpreter final : ASTVisitor<Interpreter>
     {
         if (x.isStringLiteral)
             printRaw(x.text);
+        else if (isNumericLiteral(x.text))
+        {
+            float const val{ pancakes_parse_float(x.text.data(), static_cast<int>(x.text.size())) };
+            pancakes_print_number(val);
+        }
         else
             printValue(x.text);
     }
@@ -105,15 +119,18 @@ export struct Interpreter final : ASTVisitor<Interpreter>
         {
             int col{ 0 }, row{ 0 };
             pancakes_get_cursor_pos(&col, &row);
-            printSpaces(fieldWidth - (col % fieldWidth));
+            printSpaces(fieldWidth - col % fieldWidth);
         }
     }
 
 private:
     void printValue(std::string const& varName)
     {
-        if (auto it{ variables.find(varName) }; it != variables.end())
-            printRaw(std::format("{}", it->second));
+        float val{ 0.0f };
+        if (auto const it{ variables.find(varName) }; it != variables.end())
+            val = it->second;
+
+        pancakes_print_number(val);
     }
 
     static void printRaw(std::string_view const str)
