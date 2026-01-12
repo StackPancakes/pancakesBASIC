@@ -29,7 +29,12 @@ import pancakes.basic.AST;
 
 constexpr auto DUMP_TOKENS{ "--DUMP-TOKENS" };
 constexpr auto COMPILE{ "--COMPILE" };
+constexpr auto EMIT_LLVM{ "--EMIT-LLVM" };
 constexpr auto BASIC_FILE_EXTENSION_LENGTH{ 4 };
+
+bool toDumpTokens{ false };
+bool toCompile{ false };
+bool toEmitLLVM{ false };
 
 namespace fs = std::filesystem;
 
@@ -39,9 +44,7 @@ static std::string makeTokensFilename(std::string const& basFile)
 {
     if (basFile.size() >= BASIC_FILE_EXTENSION_LENGTH &&
         basFile.substr(basFile.size() - BASIC_FILE_EXTENSION_LENGTH) == ".bas")
-    {
         return basFile.substr(0, basFile.size() - BASIC_FILE_EXTENSION_LENGTH) + "tokens.txt";
-    }
     return basFile + ".tokens.txt";
 }
 
@@ -138,9 +141,7 @@ static void compile(std::vector<Token>& tokens, std::string_view const inputFile
     compiler.finalizeModule();
 
     if (llvm::verifyModule(*compiler.module, &llvm::errs()))
-    {
         throw std::runtime_error{ "LLVM verification failed" };
-    }
 
     std::error_code ec{};
     std::string const llPath{ "output.ll" };
@@ -149,9 +150,7 @@ static void compile(std::vector<Token>& tokens, std::string_view const inputFile
     {
         llvm::raw_fd_ostream llOut{ llPath, ec, llvm::sys::fs::OF_Text };
         if (ec)
-        {
             throw std::runtime_error{ std::format("Failed to open output.ll: {}", ec.message()) };
-        }
         compiler.module->print(llOut, nullptr);
     }
 
@@ -165,9 +164,7 @@ static void compile(std::vector<Token>& tokens, std::string_view const inputFile
     std::string error{};
     const llvm::Target* target{ llvm::TargetRegistry::lookupTarget(targetTriple, error) };
     if (!target)
-    {
         throw std::runtime_error{ error };
-    }
 
     llvm::TargetOptions const opt{};
     auto targetMachine{ target->createTargetMachine(targetTriple, "generic", "", opt, std::optional<llvm::Reloc::Model>{}) };
@@ -176,15 +173,11 @@ static void compile(std::vector<Token>& tokens, std::string_view const inputFile
     {
         llvm::raw_fd_ostream objOut{ objPath, ec, llvm::sys::fs::OF_None };
         if (ec)
-        {
             throw std::runtime_error{ "Failed to open object file: " + ec.message() };
-        }
 
         llvm::legacy::PassManager pass{};
         if (targetMachine->addPassesToEmitFile(pass, objOut, nullptr, llvm::CodeGenFileType::ObjectFile))
-        {
             throw std::runtime_error{ "Failed to emit object file" };
-        }
 
         pass.run(*compiler.module);
         objOut.flush();
@@ -194,11 +187,10 @@ static void compile(std::vector<Token>& tokens, std::string_view const inputFile
     exePath.replace_extension(".exe");
 
     if (!linkObjectToExe(std::wstring{ objPath.begin(), objPath.end() }, exePath.wstring()))
-    {
         throw std::runtime_error{ "Linking failed" };
-    }
 
-    fs::remove(llPath);
+    if (!toEmitLLVM)
+        fs::remove(llPath);
     fs::remove(objPath);
 }
 
@@ -214,8 +206,6 @@ int main(int const argc, char* argv[])
 
         std::span const args{ argv + 1, static_cast<size_t>(argc - 1) };
 
-        bool toDumpTokens{ false };
-        bool toCompile{ false };
         std::vector<std::string_view> fileNames{};
 
         for (char* argPtr : args)
@@ -232,47 +222,33 @@ int main(int const argc, char* argv[])
             {
                 std::string flag{ arg };
                 for (char& c : flag)
-                {
                     if (c != '-')
-                    {
                         c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                    }
-                }
 
                 if (flag == DUMP_TOKENS)
-                {
                     toDumpTokens = true;
-                }
                 if (flag == COMPILE)
-                {
                     toCompile = true;
-                }
+                if (flag == EMIT_LLVM)
+                    toEmitLLVM = true;
             }
         }
 
         if (fileNames.empty())
-        {
             throw std::runtime_error{ "No .bas file specified" };
-        }
 
         fs::path const path{ resolvePath(fileNames[0]) };
         std::string const buffer{ readFile(path) };
 
         Lexer lexer{ buffer };
         if (toDumpTokens)
-        {
             dumpTokens(lexer, makeTokensFilename(std::string{ fileNames[0] }));
-        }
 
-        std::vector<Token> tokens{ lexer.tokenize() };
+        std::vector tokens{ lexer.tokenize() };
         if (toCompile)
-        {
             compile(tokens, fileNames[0]);
-        }
         else
-        {
             interpret(tokens);
-        }
 
         return 0;
     }
