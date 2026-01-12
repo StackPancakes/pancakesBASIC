@@ -1,6 +1,6 @@
 module;
 #include <string_view>
-export module pancakes.basic.setting.settings;
+export module pancakes.basic.settings;
 
 export struct CaseInsensitiveHash
 {
