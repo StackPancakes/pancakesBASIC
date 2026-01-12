@@ -31,6 +31,18 @@ export struct PrintItem
     };
 
     std::variant<Expression, Tab, Spc, Sep> value;
+
+    [[maybe_unused]] [[nodiscard]] bool isCompileTime() const
+    {
+        return std::visit([]<typename T0>(T0 const&)
+        {
+            using T = std::decay_t<T0>;
+            if constexpr (std::is_same_v<T, Expression> || std::is_same_v<T, Tab>)
+                return false;
+            else
+                return true;
+        }, value);
+    }
 };
 
 export struct PrintNode
