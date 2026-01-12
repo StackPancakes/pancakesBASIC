@@ -2,19 +2,17 @@ module;
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/Module.h>
-#include <llvm/IR/Constants.h>
-#include <llvm/IR/DerivedTypes.h>
 #include <llvm/Support/TargetSelect.h>
 #include <memory>
 #include <unordered_map>
 #include <string>
-#include <ranges>
+#include <variant>
 
 export module pancakes.basic.compiler;
 
 import pancakes.basic.AST;
 
-export struct Compiler final : ASTVisitor
+export struct Compiler final : ASTVisitor<Compiler>
 {
     llvm::LLVMContext context{};
     std::unique_ptr<llvm::Module> module{};
@@ -32,165 +30,121 @@ export struct Compiler final : ASTVisitor
     {
         module = std::make_unique<llvm::Module>("pancakes", context);
         builder = std::make_unique<llvm::IRBuilder<>>(context);
-
-        initializeTarget();
+        llvm::InitializeNativeTarget();
+        llvm::InitializeNativeTargetAsmPrinter();
         setupExternalFunctions();
         createEntryPoint();
     }
 
-    void finalizeModule()
+    void visit(PrintNode& node)
     {
-        createExitCall();
+        for (auto& item : node.items)
+            dispatch(item);
+
+        if (node.items.empty())
+        {
+            emitString("\n");
+            return;
+        }
+
+        bool const hasTrailingSep{ std::visit([]<typename T0>(T0 const& x) -> bool
+        {
+            using T = std::decay_t<T0>;
+            if constexpr (std::is_same_v<T, PrintItem::Sep>)
+                return x.symbol == ";" || x.symbol == ",";
+            return false;
+        }, node.items.back().value) };
+
+        if (!hasTrailingSep)
+            emitString("\n");
+    }
+
+    void visit(InputNode const& node)
+    {
+        llvm::Type* i8Ty{ llvm::Type::getInt8Ty(context) };
+        llvm::ArrayType* arrayTy{ llvm::ArrayType::get(i8Ty, 256) };
+        llvm::AllocaInst* buffer{ builder->CreateAlloca(arrayTy, nullptr, "inputBuffer") };
+        llvm::Value* zero{ llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0) };
+        llvm::Value* bufPtr{ builder->CreateInBoundsGEP(arrayTy, buffer, { zero, zero }) };
+        llvm::Value* bufSize{ llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 256) };
+        llvm::Value* readCount{ builder->CreateCall(inputFn, { bufPtr, bufSize }) };
+        llvm::Value* val{ builder->CreateCall(parseFloatFn, { bufPtr, readCount }) };
+        builder->CreateStore(val, getOrCreateVariable(node.variable));
+    }
+
+    void visit(PrintItem::Expression const& x)
+    {
+        if (x.isStringLiteral)
+            emitString(x.text);
+        else
+        {
+            llvm::Value* val{ builder->CreateLoad(llvm::Type::getFloatTy(context), getOrCreateVariable(x.text)) };
+            builder->CreateCall(printFloatFn, { val });
+        }
+    }
+
+    void visit(PrintItem::Sep const& x)
+    {
+        if (x.symbol == ",")
+            emitString("    ");
+        else if (x.symbol == "'")
+            emitString("\n");
+    }
+
+    void visit(PrintItem::Tab& x)
+    {
+        emitString("    ");
+    }
+
+    void visit(PrintItem::Spc& x)
+    {
+        emitString(" ");
+    }
+
+    void finalizeModule() const
+    {
         builder->CreateRetVoid();
     }
 
-    void visit(PrintNode* node) override
-    {
-        for (auto const& item : node->items)
-            emitPrintItem(item);
-
-        appendNewlineIfNeeded(node);
-    }
-
-    void visit(InputNode* node) override
-    {
-        constexpr int bufferSize{ 256 };
-        auto* buffer{ allocateInputBuffer(bufferSize) };
-        auto* bufferSizeConst{ llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), bufferSize) };
-        auto* charsRead{ builder->CreateCall(inputFn, { buffer, bufferSizeConst }) };
-        auto* value{ builder->CreateCall(parseFloatFn, { buffer, charsRead }) };
-        builder->CreateStore(value, getOrCreateVariable(node->variable));
-    }
-
 private:
-    static void initializeTarget()
+    void emitString(std::string const& str)
     {
-        llvm::InitializeNativeTarget();
-        llvm::InitializeNativeTargetAsmPrinter();
-        llvm::InitializeNativeTargetAsmParser();
+        llvm::Value* strPtr{ builder->CreateGlobalStringPtr(str) };
+        llvm::Value* len{ llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), static_cast<int>(str.size())) };
+        builder->CreateCall(printStringFn, { strPtr, len });
+    }
+
+    llvm::AllocaInst* getOrCreateVariable(std::string const& name)
+    {
+        if (variables.contains(name))
+            return variables[name];
+
+        llvm::BasicBlock& entryBlock{ builder->GetInsertBlock()->getParent()->getEntryBlock() };
+        llvm::IRBuilder<> tmpBuilder{ &entryBlock, entryBlock.begin() };
+        llvm::AllocaInst* inst{ tmpBuilder.CreateAlloca(llvm::Type::getFloatTy(context), nullptr, name) };
+        variables[name] = inst;
+        return inst;
     }
 
     void createEntryPoint()
     {
-        auto* voidTy{ llvm::Type::getVoidTy(context) };
-        auto* startFn{ llvm::Function::Create(
-            llvm::FunctionType::get(voidTy, false),
-            llvm::Function::ExternalLinkage,
-            "pancakesSTART",
-            module.get()
-        ) };
-
-        auto* entry{ llvm::BasicBlock::Create(context, "entry", startFn) };
-        builder->SetInsertPoint(entry);
+        llvm::FunctionType* ft{ llvm::FunctionType::get(llvm::Type::getVoidTy(context), false) };
+        llvm::Function* f{ llvm::Function::Create(ft, llvm::Function::ExternalLinkage, "pancakesSTART", module.get()) };
+        llvm::BasicBlock* bb{ llvm::BasicBlock::Create(context, "entry", f) };
+        builder->SetInsertPoint(bb);
         builder->CreateCall(initFn);
-    }
-
-    void createExitCall()
-    {
-        auto* voidTy{ llvm::Type::getVoidTy(context) };
-        auto* i32Ty{ llvm::Type::getInt32Ty(context) };
-        auto* exitProcTy{ llvm::FunctionType::get(voidTy, { i32Ty }, false) };
-        llvm::FunctionCallee const exitFn{ module->getOrInsertFunction("ExitProcess", exitProcTy) };
-        auto* zero{ llvm::ConstantInt::get(i32Ty, 0) };
-        builder->CreateCall(exitFn, { zero });
-    }
-
-    void emitPrintItem(const PrintItem& item)
-    {
-        switch (item.kind)
-        {
-            case PrintItem::Kind::Expression:
-                emitExpression(item);
-                break;
-            case PrintItem::Kind::Tab:
-                emitString("    ");
-                break;
-            case PrintItem::Kind::Spc:
-                emitString(" ");
-                break;
-            case PrintItem::Kind::Sep:
-                emitSeparator(item.text);
-                break;
-        }
-    }
-
-    void emitExpression(const PrintItem& item)
-    {
-        if (item.isStringLiteral)
-        {
-            emitString(item.text);
-        }
-        else
-        {
-            auto* value{ builder->CreateLoad(llvm::Type::getFloatTy(context), getOrCreateVariable(item.text)) };
-            builder->CreateCall(printFloatFn, { value });
-        }
-    }
-
-    void emitSeparator(const std::string& sep)
-    {
-        if (sep == ",") emitString("    ");
-        else if (sep == "'") emitString("\r\n");
-    }
-
-    void appendNewlineIfNeeded(PrintNode const* node)
-    {
-        if (node->items.empty()) return;
-        if (node->items.back().kind != PrintItem::Kind::Sep)
-            emitString("\r\n");
-    }
-
-    llvm::AllocaInst* getOrCreateVariable(const std::string& name)
-    {
-        if (auto it{ variables.find(name) }; it != variables.end())
-            return it->second;
-
-        auto* alloca{ builder->CreateAlloca(llvm::Type::getFloatTy(context), nullptr, name) };
-        variables[name] = alloca;
-        return alloca;
-    }
-
-    // ReSharper disable once CppDFAConstantParameter
-    llvm::Value* allocateInputBuffer(int const size)
-    {
-        auto* i8Ty{ llvm::Type::getInt8Ty(context) };
-        auto* arrayTy{ llvm::ArrayType::get(i8Ty, size) };
-        auto* buffer{ builder->CreateAlloca(arrayTy, nullptr, "inputBuffer") };
-        auto* zero{ llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0) };
-        return builder->CreateInBoundsGEP(arrayTy, buffer, { zero, zero }, "bufptr");
-    }
-
-    void emitString(const std::string& str)
-    {
-        auto* i32Ty{ llvm::Type::getInt32Ty(context) };
-        auto* strPtr{ builder->CreateGlobalStringPtr(str) };
-        auto* length{ llvm::ConstantInt::get(i32Ty, static_cast<int>(str.size())) };
-        builder->CreateCall(printStringFn, { strPtr, length });
     }
 
     void setupExternalFunctions()
     {
-        auto* voidTy{ llvm::Type::getVoidTy(context) };
-        auto* floatTy{ llvm::Type::getFloatTy(context) };
-        auto* i32Ty{ llvm::Type::getInt32Ty(context) };
-        auto* i8PtrTy{ llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(context)) };
-
-        auto addNoUnwind{ [](llvm::FunctionCallee fn)
-        {
-            if (auto* func{ llvm::dyn_cast<llvm::Function>(fn.getCallee()) })
-                func->addFnAttr(llvm::Attribute::NoUnwind);
-        } };
-
+        llvm::Type* voidTy{ llvm::Type::getVoidTy(context) };
+        llvm::Type* floatTy{ llvm::Type::getFloatTy(context) };
+        llvm::Type* i32Ty{ llvm::Type::getInt32Ty(context) };
+        llvm::Type* i8PtrTy{ llvm::PointerType::getUnqual(llvm::Type::getInt8Ty(context)) };
         initFn = module->getOrInsertFunction("pancakes_init", llvm::FunctionType::get(voidTy, false));
         parseFloatFn = module->getOrInsertFunction("pancakes_parse_float", llvm::FunctionType::get(floatTy, { i8PtrTy, i32Ty }, false));
         printFloatFn = module->getOrInsertFunction("pancakes_print_float", llvm::FunctionType::get(voidTy, { floatTy }, false));
         printStringFn = module->getOrInsertFunction("pancakes_print_string", llvm::FunctionType::get(voidTy, { i8PtrTy, i32Ty }, false));
         inputFn = module->getOrInsertFunction("pancakes_input", llvm::FunctionType::get(i32Ty, { i8PtrTy, i32Ty }, false));
-
-        addNoUnwind(initFn);
-        addNoUnwind(parseFloatFn);
-        addNoUnwind(printFloatFn);
-        addNoUnwind(printStringFn);
-        addNoUnwind(inputFn);
     }
 };
