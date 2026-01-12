@@ -1,4 +1,4 @@
 REM prints hello world
 
 PRINT "Hello"
-? "Hello Cuties!"
+? "Hello Cuties!" REM ? no longer works
