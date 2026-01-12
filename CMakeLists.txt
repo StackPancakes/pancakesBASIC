@@ -24,22 +24,24 @@ find_package(LLVM REQUIRED CONFIG
 include_directories(${LLVM_INCLUDE_DIRS})
 add_definitions(${LLVM_DEFINITIONS})
 
-add_executable(PancakesBASIC main.cpp
-        runtime/pancakes_runtime.cpp)
+add_executable(PancakesBASIC src/main.cpp
+)
 
 target_sources(PancakesBASIC
         PRIVATE
         FILE_SET CXX_MODULES FILES
-        pancakes/basic/settings/settings.cppm
-        pancakes/basic/tokentype.cppm
-        pancakes/basic/symbols.cppm
-        pancakes/basic/keywords.cppm
-        pancakes/basic/token.cppm
-        pancakes/basic/lexer.cppm
-        pancakes/basic/AST.cppm
-        pancakes/basic/parser.cppm
-        pancakes/basic/compiler.cppm
-        pancakes/basic/interpreter.cppm
+        src/pancakes/basic/frontend/util.cppm
+        src/pancakes/basic/core/visitor.cppm
+        src/pancakes/basic/settings/settings.cppm
+        src/pancakes/basic/frontend/tokentype.cppm
+        src/pancakes/basic/frontend/symbols.cppm
+        src/pancakes/basic/frontend/keywords.cppm
+        src/pancakes/basic/frontend/token.cppm
+        src/pancakes/basic/frontend/lexer.cppm
+        src/pancakes/basic/core/AST.cppm
+        src/pancakes/basic/core/parser.cppm
+        src/pancakes/execution/compiler.cppm
+        src/pancakes/execution/interpreter.cppm
 )
 
 llvm_map_components_to_libnames(llvm_libs
