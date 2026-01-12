@@ -33,11 +33,13 @@ extern "C"
         if (len <= 0 || !str)
             return 0.0f;
 
-        float res{ 0.0f };
-        float div{ 1.0f };
+        double res{ 0.0 };
+        double div{ 1.0 };
         int i{ 0 };
         bool neg{ false };
         bool dot{ false };
+
+        while (i < len && (str[i] == ' ' || str[i] == '\t')) i++;
 
         if (str[i] == '-')
         {
@@ -69,7 +71,7 @@ extern "C"
             }
         }
 
-        return neg ? -res : res;
+        return static_cast<float>(neg ? -res : res);
     }
 
     void pancakes_print_string(char const* str, int const len)
@@ -179,13 +181,13 @@ extern "C"
     {
         DWORD read{ 0 };
         if (is_console_in())
+        {
             if (!ReadConsoleA(in(), buffer, static_cast<DWORD>(bufferLen - 1), &read, nullptr))
-                goto process;
-
-        if (!ReadFile(in(), buffer, static_cast<DWORD>(bufferLen - 1), &read, nullptr))
+                return 0;
+        }
+        else if (!ReadFile(in(), buffer, static_cast<DWORD>(bufferLen - 1), &read, nullptr))
             return 0;
 
-        process:
         int len{ static_cast<int>(read) };
         while (len > 0 && (buffer[len - 1] == '\r' || buffer[len - 1] == '\n'))
             --len;
