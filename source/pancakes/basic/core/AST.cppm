@@ -1,4 +1,5 @@
 module;
+#include <memory>
 #include <string>
 #include <vector>
 #include <optional>
@@ -6,14 +7,22 @@ module;
 
 export module pancakes.basic.AST;
 
-export struct PrintItem
+export struct Expr
 {
-    struct Expression
+    struct Number { double value; };
+    struct Variable { std::string name; };
+    struct BinaryOp
     {
-        std::string text;
-        bool isStringLiteral{};
+        char op; // '+', '-', '*', '/'
+        std::unique_ptr<Expr> left;
+        std::unique_ptr<Expr> right;
     };
 
+    std::variant<Number, Variable, BinaryOp> value;
+};
+
+export struct PrintItem
+{
     struct Tab
     {
         std::string first;
@@ -30,14 +39,14 @@ export struct PrintItem
         std::string symbol;
     };
 
-    std::variant<Expression, Tab, Spc, Sep> value;
+    std::variant<Expr, Tab, Spc, Sep> value;
 
     [[maybe_unused]] [[nodiscard]] bool isCompileTime() const
     {
         return std::visit([]<typename T0>(T0 const&)
         {
             using T = std::decay_t<T0>;
-            if constexpr (std::is_same_v<T, Expression> || std::is_same_v<T, Tab>)
+            if constexpr (std::is_same_v<T, Expr> || std::is_same_v<T, Tab>)
                 return false;
             else
                 return true;
