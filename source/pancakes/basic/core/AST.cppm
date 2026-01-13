@@ -19,6 +19,21 @@ export struct Expr
     };
 
     std::variant<Number, Variable, BinaryOp> value;
+
+    [[maybe_unused]] [[nodiscard]] bool isCompileTime() const
+    {
+        return std::visit([]<typename T0>(T0 const& node) -> bool
+        {
+            using T = std::decay_t<T0>;
+            if constexpr (std::is_same_v<T, Number>)
+                return true;
+            else if constexpr (std::is_same_v<T, Variable>)
+                return false;
+            else if constexpr (std::is_same_v<T, BinaryOp>)
+                return node.left->isCompileTime() && node.right->isCompileTime();
+            return false;
+        }, value);
+    }
 };
 
 export struct PrintItem
@@ -43,10 +58,12 @@ export struct PrintItem
 
     [[maybe_unused]] [[nodiscard]] bool isCompileTime() const
     {
-        return std::visit([]<typename T0>(T0 const&)
+        return std::visit([]<typename T0>(T0 const& node)
         {
             using T = std::decay_t<T0>;
-            if constexpr (std::is_same_v<T, Expr> || std::is_same_v<T, Tab>)
+            if constexpr (std::is_same_v<T, Expr>)
+                return node.isCompileTime();
+            else if constexpr (std::is_same_v<T, Tab>)
                 return false;
             else
                 return true;
