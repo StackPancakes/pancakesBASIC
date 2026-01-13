@@ -1,125 +1,212 @@
-<program>           ::= { <line> }
+<program>
+    ::= { <line> }
 
-<line>              ::= [ <line_number> ] <statement_list> <newline>
+<line>
+    ::= [ <line_number> ] <statement_list> <newline>
 
-<line_number>       ::= <digit> { <digit> }
+<line_number>
+    ::= <digit> { <digit> }
 
-<statement_list>    ::= <statement> { ":" <statement> }
+<statement_list>
+    ::= <statement> { ":" <statement> }
 
-<statement>         ::= <rem_stmt>
-                      | <print_stmt>
-                      | <input_stmt>
-                      | <assignment_stmt>
-                      | <if_stmt>
-                      | <for_stmt>
-                      | <while_stmt>
-                      | <repeat_stmt>
-                      | <proc_def>
-                      | <proc_call>
-                      | <gosub_stmt>
-                      | <return_stmt>
-                      | <goto_stmt>
-                      | <dim_stmt>
-                      | <local_stmt>
-                      | <data_stmt>
-                      | <read_stmt>
-                      | <restore_stmt>
-                      | <mode_stmt>
-                      | <end_stmt>
+<statement>
+    ::= <rem_stmt>
+     | <print_stmt>
+     | <input_stmt>
+     | <assignment_stmt>
+     | <if_stmt>
+     | <for_stmt>
+     | <while_stmt>
+     | <repeat_stmt>
+     | <proc_def>
+     | <proc_call>
+     | <gosub_stmt>
+     | <return_stmt>
+     | <goto_stmt>
+     | <dim_stmt>
+     | <local_stmt>
+     | <data_stmt>
+     | <read_stmt>
+     | <restore_stmt>
+     | <mode_stmt>
+     | <end_stmt>
 
-<rem_stmt>          ::= "REM" { <any_character_except_newline> }
+<rem_stmt>
+    ::= "REM" { <any_character_except_newline> }
 
-<print_stmt>        ::= "PRINT" [ <print_list> ]
-<print_list>        ::= <print_item> { [ <print_sep> ] <print_item> } [ <print_sep> ]
-<print_item>        ::= <expression>
-                     | "TAB" [ "(" <expression> [ "," <expression> ] ")" ]
-                     | "SPC" [ "(" <expression> ")" ]
-<print_sep>         ::= ";" | "," | "'"
+<print_stmt>
+    ::= "PRINT" [ <print_list> ]
 
-<input_stmt>        ::= "INPUT" [ <string_literal> <sep> ] <id_list>
-<sep>               ::= ";" | ","
-<id_list>           ::= <l_value> { "," <l_value> }
+<print_list>
+    ::= <print_item>
+       { [ <print_sep> ] <print_item> }
+       [ <print_sep> ]
 
-<assignment_stmt>   ::= [ "LET" ] <l_value> "=" <expression>
+<print_item>
+    ::= <expression>
+     | "TAB" [ "(" <expression> [ "," <expression> ] ")" ]
+     | "SPC" [ "(" <expression> ")" ]
 
-<l_value>           ::= <identifier>
-                      | <memory_ref>
+<print_sep>
+    ::= ";" | "," | "'"
 
-<memory_ref>        ::= <ind_op> <factor>
-                      | <factor> <ind_op> <factor>
+<input_stmt>
+    ::= "INPUT" [ <string_literal> <sep> ] <id_list>
 
-<ind_op>            ::= "?" | "!" | "$" | "|"
+<sep>
+    ::= ";" | ","
 
-<if_stmt>           ::= "IF" <expression> "THEN" <statement_list> [ "ELSE" <statement_list> ]
-                      | "IF" <expression> [ "THEN" ] <statement> [ "ELSE" <statement> ]
+<id_list>
+    ::= <l_value> { "," <l_value> }
 
-<for_stmt>          ::= "FOR" <identifier> "=" <expression> "TO" <expression> [ "STEP" <expression> ]
-                      | "NEXT" [ <identifier> ]
+<assignment_stmt>
+    ::= [ "LET" ] <l_value> "=" <expression>
 
-<while_stmt>        ::= "WHILE" <expression>
-                      | "ENDWHILE"
+<l_value>
+    ::= <identifier>
+     | <memory_ref>
 
-<repeat_stmt>       ::= "REPEAT"
-                      | "UNTIL" <expression>
+<memory_ref>
+    ::= <ind_op> <factor>
+     | <factor> <ind_op> <factor>
 
-<proc_def>          ::= "DEF" <proc_name> [ "(" <parameter_list> ")" ]
-                      | "ENDPROC"
+<ind_op>
+    ::= "?" | "!" | "$" | "|"
 
-<fn_def>            ::= "DEF" <fn_name> [ "(" <parameter_list> ")" ] [ <statement_list> ] "=" <expression>
+<if_stmt>
+    ::= "IF" <expression> "THEN" <statement_list> [ "ELSE" <statement_list> ]
+     | "IF" <expression> [ "THEN" ] <statement> [ "ELSE" <statement> ]
 
-<proc_call>         ::= <proc_name> [ "(" <expression_list> ")" ]
+<for_stmt>
+    ::= "FOR" <identifier> "=" <expression> "TO" <expression> [ "STEP" <expression> ]
+     | "NEXT" [ <identifier> ]
 
-<proc_name>         ::= "PROC" <identifier>
-<fn_name>           ::= "FN" <identifier>
+<while_stmt>
+    ::= "WHILE" <expression>
+     | "ENDWHILE"
 
-<gosub_stmt>        ::= "GOSUB" <expression>
-<goto_stmt>         ::= "GOTO" <expression>
-<return_stmt>       ::= "RETURN"
+<repeat_stmt>
+    ::= "REPEAT"
+     | "UNTIL" <expression>
 
-<dim_stmt>          ::= "DIM" <identifier> <expression> { "," <identifier> <expression> }
-<local_stmt>        ::= "LOCAL" <id_list>
+<proc_def>
+    ::= "DEF" <proc_name> [ "(" <parameter_list> ")" ]
+     | "ENDPROC"
 
-<data_stmt>         ::= "DATA" <expression> { "," <expression> }
-<read_stmt>         ::= "READ" <id_list>
-<restore_stmt>      ::= "RESTORE" [ <expression> ]
+<fn_def>
+    ::= "DEF" <fn_name>
+        [ "(" <parameter_list> ")" ]
+        [ <statement_list> ]
+        "=" <expression>
 
-<mode_stmt>         ::= "MODE" <expression>
-<end_stmt>          ::= "END" | "STOP"
+<proc_call>
+    ::= <proc_name> [ "(" <expression_list> ")" ]
 
-<parameter_list>    ::= [ "RETURN" ] <identifier> { "," [ "RETURN" ] <identifier> }
+<proc_name>
+    ::= "PROC" <identifier>
 
-<expression_list>   ::= <expression> { "," <expression> }
+<fn_name>
+    ::= "FN" <identifier>
 
-<expression>        ::= <relational_expr> { ("AND" | "OR" | "EOR") <relational_expr> }
+<gosub_stmt>
+    ::= "GOSUB" <expression>
 
-<relational_expr>   ::= <sum> { ("=" | "<>" | "<" | ">" | "<=" | ">=") <sum> }
+<goto_stmt>
+    ::= "GOTO" <expression>
 
-<sum>               ::= <term> { ("+" | "-") <term> }
+<return_stmt>
+    ::= "RETURN"
 
-<term>              ::= <factor> { ("*" | "/" | "DIV" | "MOD" | "^") <factor> }
+<dim_stmt>
+    ::= "DIM" <identifier> <expression>
+        { "," <identifier> <expression> }
 
-<factor>            ::= <number>
-                      | <string_literal>
-                      | <identifier>
-                      | <memory_ref>
-                      | "(" <expression> ")"
-                      | <fn_name> [ "(" <expression_list> ")" ]
-                      | "USR" <expression>
-                      | "GET"
-                      | "-" <factor>
-                      | "NOT" <factor>
-                      | "&" <hex_digit> { <hex_digit> }
+<local_stmt>
+    ::= "LOCAL" <id_list>
 
-<identifier>        ::= ( <letter> | "_" ) { <letter> | <digit> | "_" | "$" | "%" }
+<data_stmt>
+    ::= "DATA" <expression> { "," <expression> }
 
-<number>            ::= <digit> { <digit> } [ "." <digit> { <digit> } ] [ "E" [ "+" | "-" ] <digit> { <digit> } ]
+<read_stmt>
+    ::= "READ" <id_list>
 
-<letter>            ::= "A"-"Z" | "a"-"z"
+<restore_stmt>
+    ::= "RESTORE" [ <expression> ]
 
-<digit>             ::= "0"-"9"
+<mode_stmt>
+    ::= "MODE" <expression>
 
-<hex_digit>         ::= "0"-"9" | "A"-"F" | "a"-"f"
+<end_stmt>
+    ::= "END" | "STOP"
 
-<string_literal>    ::= '"' { <any_character_except_quote> } '"'
+<parameter_list>
+    ::= [ "RETURN" ] <identifier>
+        { "," [ "RETURN" ] <identifier> }
 
-<newline>           ::= "\n" | "\r"
+<expression_list>
+    ::= <expression> { "," <expression> }
+
+────────────────────────────────
+Expressions
+────────────────────────────────
+
+<expression>
+    ::= <logical_expr>
+
+<logical_expr>
+    ::= <relational_expr>
+        { ( "AND" | "OR" | "EOR" ) <relational_expr> }
+
+<relational_expr>
+    ::= <sum>
+        { ( "=" | "<>" | "<" | ">" | "<=" | ">=" ) <sum> }
+
+<sum>
+    ::= <term>
+        { ( "+" | "-" ) <term> }
+
+<term>
+    ::= <power>
+        { ( "*" | "/" | "DIV" | "MOD" ) <power> }
+
+<power>
+    ::= <factor>
+        { "^" <factor> }
+
+<factor>
+    ::= <number>
+     | <string_literal>
+     | <identifier>
+     | <memory_ref>
+     | "(" <expression> ")"
+     | <fn_name> [ "(" <expression_list> ")" ]
+     | "USR" <expression>
+     | "GET"
+     | "-" <factor>
+     | "NOT" <factor>
+     | "&" <hex_digit> { <hex_digit> }
+
+<identifier>
+    ::= ( <letter> | "_" )
+        { <letter> | <digit> | "_" | "$" | "%" }
+
+<number>
+    ::= <digit> { <digit> }
+        [ "." <digit> { <digit> } ]
+        [ "E" [ "+" | "-" ] <digit> { <digit> } ]
+
+<string_literal>
+    ::= '"' { <any_character_except_quote> } '"'
+
+<letter>
+    ::= "A"–"Z" | "a"–"z"
+
+<digit>
+    ::= "0"–"9"
+
+<hex_digit>
+    ::= "0"–"9" | "A"–"F" | "a"–"f"
+
+<newline>
+    ::= "\n" | "\r"
