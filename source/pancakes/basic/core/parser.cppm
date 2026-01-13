@@ -76,8 +76,7 @@ private:
 
         while (true)
         {
-            Token const next{ peek() };
-            if (next.type == TokenType::END_OF_LINE || next.type == TokenType::COLON || next.type == TokenType::END_OF_FILE)
+            if (Token const next{ peek() }; next.type == TokenType::END_OF_LINE || next.type == TokenType::COLON || next.type == TokenType::END_OF_FILE)
                 break;
 
             node.items.push_back(parsePrintItem());
@@ -88,22 +87,22 @@ private:
 
     PrintItem parsePrintItem()
     {
-        Token const tok{ peek() };
+        auto const [type, name, position]{ peek() };
         PrintItem item{};
 
-        switch (tok.type)
+        switch (type)
         {
             case TokenType::STRING:
             {
                 consume();
-                item.value = PrintItem::Expression{ std::string{ tok.name }, true };
+                item.value = PrintItem::Expression{ std::string{ name }, true };
                 break;
             }
             case TokenType::IDENTIFIER:
             case TokenType::NUMBER:
             {
                 consume();
-                item.value = PrintItem::Expression{ std::string{ tok.name }, false };
+                item.value = PrintItem::Expression{ std::string{ name }, false };
                 break;
             }
             case TokenType::TAB:
@@ -125,11 +124,11 @@ private:
             case TokenType::APOSTROPHE:
             {
                 consume();
-                item.value = PrintItem::Sep{ std::string{ tok.name } };
+                item.value = PrintItem::Sep{ std::string{ name } };
                 break;
             }
             default:
-                throw std::runtime_error{ std::format("Unexpected token in PRINT at ({}, {})", tok.position.line, tok.position.column) };
+                throw std::runtime_error{ std::format("Unexpected token in PRINT at ({}, {})", position.line, position.column) };
         }
 
         return item;
@@ -141,13 +140,13 @@ private:
         if (peek().type == TokenType::LPAREN)
         {
             consume();
-            if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER || peek().type == TokenType::STRING)
+            if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER)
             {
                 tab.first = std::string{ consume().name };
                 if (peek().type == TokenType::COMMA)
                 {
                     consume();
-                    if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER || peek().type == TokenType::STRING)
+                    if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER)
                         tab.second = std::string{ consume().name };
                 }
             }
@@ -162,7 +161,7 @@ private:
         if (peek().type == TokenType::LPAREN)
         {
             consume();
-            if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER || peek().type == TokenType::STRING)
+            if (peek().type == TokenType::IDENTIFIER || peek().type == TokenType::NUMBER)
                 spc.count = std::string{ consume().name };
             if (peek().type == TokenType::RPAREN)
                 consume();
